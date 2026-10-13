@@ -1,0 +1,199 @@
+'use strict';
+
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {buildDevExtension}=require('../../scripts/w01/build-dev-extension.cjs');
+const {
+  GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,
+  createRelease,rewriteDomain
+}=require('./fixtures.cjs');
+const {loadPlaywright}=require('./playwright-runtime.cjs');
+
+function serializeRoutes(release){
+  return Object.fromEntries([...release.routes.entries()].map(([pathname,bytes])=>[pathname,bytes.toString('base64')]));
+}
+
+// Scenario: Given a verified R1 snapshot in the loaded MV3 preview, then a UI-triggered R2 update with mismatched domain bytes.
+// Purpose: Preserve R1 and keep the failure and request audit visible while rendering only verified snapshot text.
+test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',async t=>{
+  const previewSource=fs.readFileSync(path.join(__dirname,'../../extension/w01/preview.js'),'utf8');
+  assert.doesNotMatch(previewSource,/\.(?:innerHTML|outerHTML)\s*=/);
+  assert.doesNotMatch(previewSource,/\b(?:eval|Function)\s*\(/);
+  const {playwright,version:playwrightVersion}=loadPlaywright();
+  const built=buildDevExtension({includeTestHarness:true});
+  const profilePath=path.join(built.outputRoot,'profile');
+  const screenshots={
+    r1:path.join(built.outputRoot,'preview-r1.png'),
+    r2:path.join(built.outputRoot,'preview-r2.png'),
+    rollback:path.join(built.outputRoot,'preview-rollback-r1.png'),
+    failedUpdate:path.join(built.outputRoot,'preview-failed-update-r1.png')
+  };
+  const r1=createRelease({dataRevision:DATA_R1,contentVersion:'0.0.1'});
+  rewriteDomain(r1,'skills',document=>{
+    const presentation=document.records.find(record=>record.owner==='web'&&record.kind==='presentation'&&
+      record.entityRef==='fixture:skill:a');
+    presentation.payload.name='<em>示意技能</em>';
+  });
+  const r2=createRelease({dataRevision:DATA_R2,contentVersion:'0.0.2'});
+  const r2InvalidRoutes=serializeRoutes(r2);
+  const r2SkillsPath='/data/'+DATA_R2+'/skills.json';
+  const r2SkillsBytes=r2.routes.get(r2SkillsPath);
+  r2InvalidRoutes[r2SkillsPath]=Buffer.from(
+    r2SkillsBytes.toString('utf8').replace('"fixture:skill:a"','"fixture:skill:b"')
+  ).toString('base64');
+  let context;
+  const pageErrors=[];
+  const consoleErrors=[];
+  const browserRequestOrigins=[];
+  const originalWorkingDirectory=process.cwd();
+  try{
+    process.chdir(built.outputRoot);
+    try{
+      context=await playwright.chromium.launchPersistentContext(profilePath,{
+        channel:'chromium',executablePath:process.env.SYP_W01_CHROMIUM_EXE||undefined,
+        headless:true,viewport:{width:1180,height:900},
+        ignoreDefaultArgs:['--disable-extensions'],
+        args:['--disable-extensions-except='+built.extensionPath,'--load-extension='+built.extensionPath]
+      });
+    }catch(error){
+      if(error.message.includes('spawn UNKNOWN')){
+        t.diagnostic('Bundled Chromium could not start: '+error.message);
+        t.skip('Loaded-extension renderer test unavailable because Chromium failed to start.');
+        return;
+      }
+      throw error;
+    }
+    let worker=context.serviceWorkers().find(candidate=>candidate.url().endsWith('/service-worker.js'));
+    if(!worker) worker=await context.waitForEvent('serviceworker',{timeout:15000});
+    assert.ok(worker.url().endsWith('/service-worker.js'));
+    const extensionId=new URL(worker.url()).host;
+    const page=await context.newPage();
+    page.on('pageerror',error=>pageErrors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error') consoleErrors.push(message.text());});
+    page.on('request',request=>{
+      const url=new URL(request.url());
+      browserRequestOrigins.push(url.protocol+'//'+url.host);
+    });
+    await page.goto('chrome-extension://'+extensionId+'/idb-harness.html');
+    await page.waitForFunction(()=>typeof window.runW01PreviewFaultStages==='function');
+    const stages=await page.evaluate(input=>window.runW01PreviewFaultStages(input),{
+      gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,
+      r1DataRevision:DATA_R1,r2DataRevision:DATA_R2,
+      r1Routes:serializeRoutes(r1),r2Routes:serializeRoutes(r2),
+      r2InvalidRoutes
+    });
+    assert.equal(stages.initialActive.dataRevision,DATA_R1);
+    assert.equal(stages.invalidUpdateRejected,true);
+    assert.equal(stages.activeAfterInvalid.dataRevision,DATA_R1);
+    assert.equal(stages.transactionAbortObserved,true);
+    assert.equal(stages.activeAfterAbort.dataRevision,DATA_R1);
+    assert.equal(stages.abortedSnapshotAbsent,true);
+
+    await page.goto('chrome-extension://'+extensionId+'/preview.html');
+    await page.waitForFunction(()=>document.body.dataset.w01State==='active');
+    let rendered=await page.locator('#snapshot-info').textContent();
+    assert.ok(rendered.includes(GAME_VERSION));
+    assert.ok(rendered.includes(DATA_R1));
+    assert.ok((await page.locator('#data-status').textContent()).includes('合成 Fixture 資料'));
+    const skillTitle=page.locator('#content-cards .entity-card h3').first();
+    assert.equal(await skillTitle.textContent(),'<em>示意技能</em>');
+    assert.equal(await page.locator('#content-cards .entity-card h3 em').count(),0);
+    const contentText=await page.locator('#content-cards').textContent();
+    assert.ok(contentText.includes('冷卻 < 40 秒 & 保留原句字元。'));
+    assert.ok(contentText.includes('Cooldown < 40 seconds & still literal.'));
+    assert.ok(contentText.includes('獨立勘誤'));
+    assert.ok(contentText.includes('待人工審核'));
+    assert.ok(contentText.includes('已定義階級'));
+    assert.ok(contentText.includes('可取得階級：未知'));
+    assert.ok(contentText.includes('T1 · 資料標示為未知'));
+    assert.equal(await page.locator('#content-cards .detail-section h4').count(),15);
+    assert.ok((await page.locator('#term-cards').textContent()).includes('集中維護的繁中定義。'));
+    await page.screenshot({path:screenshots.r1,fullPage:true});
+
+    await worker.evaluate(routes=>{
+      self.__w01OriginalFetch=self.fetch;
+      self.fetch=async input=>{
+        const url=new URL(String(input));
+        const encoded=routes[url.pathname];
+        if(url.origin!==W01SharedLoader.DEV_ORIGIN||typeof encoded!=='string')
+          return new Response('not found',{status:404,headers:{'Content-Type':'text/plain'}});
+        const binary=atob(encoded);
+        const bytes=new Uint8Array(binary.length);
+        for(let index=0;index<binary.length;index++) bytes[index]=binary.charCodeAt(index);
+        return new Response(bytes,{status:200,headers:{'Content-Type':'application/json; charset=utf-8'}});
+      };
+    },r2InvalidRoutes);
+    await page.locator('#load-preview').click();
+    await page.waitForFunction(()=>window.W01Preview&&window.W01Preview.getLastActivation()&&
+      window.W01Preview.getLastActivation().ok===false&&document.body.dataset.w01State==='active');
+    const failedActivation=await page.evaluate(()=>window.W01Preview.getLastActivation());
+    assert.match(failedActivation.error,/hash mismatch/);
+    assert.equal(await page.locator('#snapshot-metadata').textContent().then(text=>text.includes(DATA_R1)),true);
+    assert.equal(await page.locator('#error-message').isVisible(),true,
+      'the failed update message must remain visible after the R1 snapshot refresh');
+    assert.match(await page.locator('#error-message').textContent(),/hash mismatch/);
+    const failedNetworkAudit=await page.locator('#network-audit').textContent();
+    assert.ok(failedNetworkAudit.includes('/version.json'));
+    assert.ok(failedNetworkAudit.includes('/data/'+DATA_R2+'/skills.json'));
+    assert.ok(failedNetworkAudit.includes('HTTP 200'));
+    await page.screenshot({path:screenshots.failedUpdate,fullPage:true});
+    await worker.evaluate(()=>{self.fetch=self.__w01OriginalFetch;delete self.__w01OriginalFetch;});
+
+    await page.goto('chrome-extension://'+extensionId+'/idb-harness.html');
+    await page.waitForFunction(()=>typeof window.activateW01PreviewR2==='function');
+    const r2Active=await page.evaluate(input=>window.activateW01PreviewR2(input),{
+      gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,r2Routes:serializeRoutes(r2)
+    });
+    assert.equal(r2Active.dataRevision,DATA_R2);
+    await page.goto('chrome-extension://'+extensionId+'/preview.html');
+    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
+      document.getElementById('snapshot-metadata').textContent.includes('0.0.2'));
+    rendered=await page.locator('#snapshot-info').textContent();
+    assert.ok(rendered.includes(DATA_R2));
+    await page.screenshot({path:screenshots.r2,fullPage:true});
+
+    const rollback=await page.evaluate(async input=>new Promise(resolve=>{
+      chrome.runtime.sendMessage({type:'W01_ROLLBACK',gameReleaseId:input.gameReleaseId,
+        dataRevision:input.dataRevision},resolve);
+    }),{gameReleaseId:GAME_RELEASE_ID,dataRevision:DATA_R1});
+    assert.equal(rollback.ok,true);
+    assert.equal(rollback.active.dataRevision,DATA_R1);
+    await page.reload();
+    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
+      document.getElementById('snapshot-metadata').textContent.includes('0.0.1'));
+    rendered=await page.locator('#snapshot-info').textContent();
+    assert.ok(rendered.includes(DATA_R1));
+    await page.screenshot({path:screenshots.rollback,fullPage:true});
+
+    assert.deepEqual(pageErrors,[]);
+    assert.deepEqual(consoleErrors,[]);
+    assert.ok(browserRequestOrigins.every(origin=>'chrome-extension://'+extensionId===origin));
+    t.diagnostic(JSON.stringify({
+      devBuild:'unpacked MV3 extension; private persistent profile',
+      extensionId,
+      playwrightVersion,
+      projectDeclaredPlaywright:'1.62.1',
+      chromeVersion:context.browser().version(),
+      serviceWorker:worker.url(),
+      browserRequestOrigins:[...new Set(browserRequestOrigins)],
+      browserRequestCount:browserRequestOrigins.length,
+      syntheticOnly:true,
+      htmlTextRenderedLiterally:true,
+      fixtureAndPendingBadgesVisible:true,
+      fiveDetailSectionsPerEntity:5,
+      invalidUpdateAndTransactionAbortPreservedR1:true,
+      failedUpdateMessageVisibleAfterRefresh:true,
+      failedUpdateNetworkAuditRetained:true,
+      updateDisplayedR2:true,
+      rollbackDisplayedR1:true,
+      consoleErrors,
+      pageErrors,
+      screenshots
+    },null,2));
+  }finally{
+    if(context) await context.close();
+    process.chdir(originalWorkingDirectory);
+  }
+});

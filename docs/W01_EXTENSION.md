@@ -1,0 +1,23 @@
+# W01 shared-data loader development build
+
+The W01 loader and renderer are isolated from the existing production extension. `npm run build:w01:dev` writes a new unpacked Manifest V3 build under the system temporary directory. Its manifest grants only the fixed preview host, declares no browser permissions, and loads only the W01 service worker. The standalone `preview.html` page reads snapshots through that worker; it does not inject into or change a game page. The IDB test harness is included only when a test asks for it.
+
+The loader follows the shared v17-D package contract: `version.json` uses `schema_version: 2` and `package_kind: "fixture"`; the release manifest lists all five canonical domain files and binds them to the version entry by SHA-256; the extension downloads the required `skills`, `blessings`, `weapons`, and `terms` domains as one validated snapshot. Source and Web references resolve through their own manifest registries. The loader checks the official text, ordered segments, localization digests, visible errata anchors, required detail sections, and term links before activation. It rejects unknown compatibility features, unsafe paths, wrong MIME types, hash or size mismatches, fixture data outside development mode, and remote executable fields.
+
+Validated snapshots are staged in extension-origin IndexedDB. The active pointer changes only after the complete snapshot transaction commits. Failed updates preserve the active snapshot; rollback revalidates and activates an older snapshot for the same game release. The service worker accepts messages only from pages in the same extension and never accepts a caller-supplied data URL. The renderer uses DOM text nodes and `textContent`; it keeps faithful zh-TW text separate from visible pending errata, renders all five detail-section arrays and localized term references, and labels fixture, pending-review, and publication status.
+
+Build and unit checks:
+
+```powershell
+npm run build:w01:dev
+npm run test:w01:unit
+npm run test:w01:renderer
+```
+
+The package declares Playwright 1.62.1; the exercised existing runtime was Playwright 1.64.0. The browser tests use an already-installed Playwright runtime and browser; they do not download or install either. Set `SYP_W01_PLAYWRIGHT_ROOT` to an existing Playwright `node_modules` directory when the repository does not have local dependencies. `test:w01:idb:local` exercises real Chromium IndexedDB transactions on a private loopback fixture and does not load the extension. `test:w01:idb:extension` loads the unpacked development extension in a new persistent profile and verifies that its service worker sees the same committed and rolled-back IndexedDB state. `test:w01:renderer` additionally checks that the standalone extension page renders the verified R1/R2 snapshots, preserves R1 through an invalid update and transaction abort, and returns to R1 through the worker rollback. Its fixture is synthetic and never contacts the preview server. On Windows hosts where the cached Chromium executable cannot start, set `SYP_W01_CHROMIUM_EXE` to a private copy of that already-installed Chromium package's `chrome.exe`; tests never use a personal browser profile.
+
+To check frozen R1 and R2 compiled Web packages without network access, set SYP_W01_SHARED_PACKAGE_DIR and SYP_W01_SHARED_PACKAGE_R2_DIR to their private output directories, then run npm run test:w01:shared-package. The test verifies the package bytes locally, activates R1, rejects a hash-mismatched R2 while preserving R1, activates the valid R2, and rolls back to R1 through an in-memory fetch adapter; this is a local contract integration check, not a live request.
+
+The opt-in live browser runner uses no route mocks or local fetch adapter. After the fixed preview host has the same package as the local Web build, set `SYP_W01_LIVE_PREVIEW=1` and `SYP_W01_EXPECTED_PACKAGE_DIR` to that build directory, then run `npm run test:w01:live-preview`. It requires exactly six successful HTTPS requests from the service worker (version, manifest, and four required domains) and compares the stored manifest/domain hashes with the local package. It writes its screenshot and persistent profile under the private build directory. A failed or unavailable host is not a pass.
+
+The fixtures are synthetic and remain marked fixture-only and publication-ineligible. The renderer and IDB tests use fixture responses; they do not verify a live HTTPS package, a real game snapshot, or game-patch compatibility. Live preview deployment, human review of official wording, and compatibility with a known game snapshot remain separate gates. No store package or production manifest is produced here.
