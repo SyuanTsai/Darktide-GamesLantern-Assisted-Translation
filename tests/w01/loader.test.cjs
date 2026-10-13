@@ -4,6 +4,16 @@ const assert=require('node:assert/strict');
 const {DEV_ORIGIN,rollback,REQUIRED_KINDS,verifyStoredSnapshot}=require('../../extension/w01/loader-core.js');
 const {GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,createRelease,refreshVersion,rewriteDomain,MemoryStore,activate,json,digest}=require('./fixtures.cjs');
 const {nativeRelease}=require('./native-fixtures.cjs');
+function addPublicSourceLocator(release){
+  const reference=release.manifest.source.references[0];
+  reference.fixtureOnly=false;
+  reference.repository='https://github.com/Aussiemon/Darktide-Source-Code';
+  reference.commit='a'.repeat(40);
+  reference.path='scripts/settings/equipment/weapon_templates/chain_axes/example.lua';
+  reference.snapshot={commit:reference.commit};
+  refreshVersion(release);
+  return release;
+}
 test('UnitT10_LoadsOnlyTheRequiredSharedDomainsAndActivatesOneSnapshot',async()=>{
   // Scenario: Given a valid v17-D preview version, shared manifest, source registry, and four domain files.
   // Purpose: Verify exact byte hashes, dependency closure, fixed HTTPS origin, record references, and atomic snapshot handoff.
@@ -224,6 +234,48 @@ test('UnitT59_RejectsNativeIdentityMismatchAndInvalidCandidatePolicy',async()=>{
     const release=nativeRelease();change(release);
     await assert.rejects(()=>activate(release,new MemoryStore(),{allowPendingPreview:true}),/pending-preview|candidate|fixture|publication/i);
   }
+});
+
+test('UnitT65_AcceptsOnlyCompleteOwnerScopedPublicSourceLocators',async()=>{
+  // Scenario: Given a pending-preview package with Web-owned names and Source-owned public code locators.
+  // Purpose: Validate the exact Source locator contract without fetching locators or weakening owner/revision checks.
+  const valid=addPublicSourceLocator(nativeRelease());
+  const store=new MemoryStore();
+  const activated=await activate(valid,store,{allowPendingPreview:true});
+  assert.equal(activated.result.manifest.source.references[0].repository,
+    'https://github.com/Aussiemon/Darktide-Source-Code');
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,valid.dataRevision);
+  assert.equal(valid.fetches.length,6);
+  assert.ok(valid.fetches.every(url=>new URL(url).origin===DEV_ORIGIN));
+
+  const cases=[
+    {name:'partial locator',edit:reference=>{delete reference.snapshot;},expected:/repository, commit, path, and snapshot together/i},
+    {name:'wrong repository',edit:reference=>{reference.repository='https://github.com/example/source';},expected:/allowlisted public Source repository/i},
+    {name:'noncanonical commit',edit:reference=>{reference.commit='A'.repeat(40);},expected:/full lowercase Git SHA/i},
+    {name:'unsafe path',edit:reference=>{reference.path='../private/source.lua';},expected:/path is unsafe/i},
+    {name:'mismatched snapshot',edit:reference=>{reference.snapshot.commit='b'.repeat(40);},expected:/snapshot.commit must match/i},
+    {name:'fixture locator',edit:reference=>{reference.fixtureOnly=true;},expected:/explicitly non-fixture/i},
+    {name:'missing locator summary',edit:reference=>{delete reference.safeSummary;},expected:/safeSummary/i}
+  ];
+  for(const [index,{name,edit,expected}] of cases.entries()){
+    const candidate=addPublicSourceLocator(nativeRelease({dataRevision:['4','5','6','7','8','9','a'][index].repeat(64),
+      contentVersion:'0.0.'+String(index+4)}));
+    edit(candidate.manifest.source.references[0]);
+    refreshVersion(candidate);
+    await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),expected,name);
+    assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,valid.dataRevision,
+      name+' must not replace the active snapshot');
+  }
+
+  const wrongOwner=addPublicSourceLocator(nativeRelease({dataRevision:'a'.repeat(64),contentVersion:'0.0.10'}));
+  const sourceReference=wrongOwner.manifest.source.references[0];
+  const webReference=wrongOwner.manifest.web.references[0];
+  for(const key of ['repository','commit','path','snapshot']) webReference[key]=sourceReference[key];
+  refreshVersion(wrongOwner);
+  await assert.rejects(()=>activate(wrongOwner,store,{allowPendingPreview:true}),
+    /Web reference metadata may not contain Source-owned repository locators/i);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,valid.dataRevision,
+    'Web-owned references must not accept Source locators');
 });
 
 test('UnitT60_FailedUpdateKeepsActiveAndLegalRollbackSelectsOlderSameRelease',async()=>{

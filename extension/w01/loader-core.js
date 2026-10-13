@@ -6,6 +6,8 @@
   'use strict';
 
   const DEV_ORIGIN='https://darktide-zh-tw-preview.syuan-tsai.workers.dev';
+  const PUBLIC_SOURCE_REPOSITORY='https://github.com/Aussiemon/Darktide-Source-Code';
+  const SOURCE_LOCATOR_KEYS=Object.freeze(['repository','commit','path','snapshot']);
   const REQUIRED_KINDS=Object.freeze(['skills','blessings','weapons','terms']);
   const ALL_KINDS=Object.freeze(['skills','blessings','weapons','terms','game-changes']);
   const DEPENDENCIES=Object.freeze({
@@ -115,19 +117,46 @@
     }
     fail(label+' published package is not accepted by this DEV loader');
   }
+  function validateSourceLocatorPath(value,label){
+    if(typeof value!=='string'||value.length===0||value.includes('\\')||value.startsWith('/')||
+      /^[A-Za-z]:/.test(value)||value.includes('\0')||
+      value.split('/').some(part=>!part||part==='.'||part==='..'))
+      fail(label+' path is unsafe');
+    return value;
+  }
   function validateReferenceRegistry(references,label){
     if(!Array.isArray(references)) fail(label+' reference registry is missing');
     const ids=new Set();
     for(const reference of references){
       if(!isObject(reference)||!isNonEmptyString(reference.sourceId)||ids.has(reference.sourceId))
         fail(label+' reference registry is invalid');
-      const allowed=['sourceId','fixtureOnly','safeSummary','officialName'];
+      const hasSourceLocator=SOURCE_LOCATOR_KEYS.some(key=>Object.prototype.hasOwnProperty.call(reference,key));
+      if(label==='Web'&&hasSourceLocator)
+        fail('Web reference metadata may not contain Source-owned repository locators');
+      if(label==='source'&&Object.prototype.hasOwnProperty.call(reference,'officialName'))
+        fail('official-name metadata is restricted to the Web reference registry');
+      const allowed=['sourceId','fixtureOnly','safeSummary',...(label==='source'?SOURCE_LOCATOR_KEYS:['officialName'])];
       if(Object.keys(reference).some(key=>!allowed.includes(key))||
         ('fixtureOnly' in reference&&typeof reference.fixtureOnly!=='boolean')||
         ('safeSummary' in reference&&!isNonEmptyString(reference.safeSummary)))
         fail(label+' reference metadata is invalid');
+      if(hasSourceLocator){
+        if(label!=='source'||SOURCE_LOCATOR_KEYS.some(key=>!Object.prototype.hasOwnProperty.call(reference,key)))
+          fail('Source public locator must contain repository, commit, path, and snapshot together');
+        if(reference.repository!==PUBLIC_SOURCE_REPOSITORY)
+          fail('source public locator repository is not the allowlisted public Source repository');
+        if(typeof reference.commit!=='string'||!/^[a-f0-9]{40}$/.test(reference.commit))
+          fail('source public locator commit must be a full lowercase Git SHA');
+        validateSourceLocatorPath(reference.path,'source public locator');
+        assertExactKeys(reference.snapshot,['commit'],'source public locator snapshot');
+        if(reference.snapshot.commit!==reference.commit)
+          fail('source public locator snapshot.commit must match commit');
+        if(reference.fixtureOnly!==false)
+          fail('source public locator must be explicitly non-fixture');
+        if(!isNonEmptyString(reference.safeSummary))
+          fail('source public locator requires safeSummary');
+      }
       if('officialName' in reference){
-        if(label!=='Web') fail('official-name metadata is restricted to the Web reference registry');
         const officialName=reference.officialName;
         assertExactKeys(officialName,['sourceLocale','resource','sourceHash','key','occurrence','text','sha256'],
           label+' official name reference');
