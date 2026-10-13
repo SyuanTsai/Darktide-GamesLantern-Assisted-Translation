@@ -157,6 +157,16 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
         document.getElementById('snapshot-metadata').textContent.includes(revision),priorDataRevision,{timeout:15000});
       const initialRevision=await page.locator('#snapshot-metadata').textContent();
       assert.ok(initialRevision.includes(priorDataRevision),'Existing persistent profile does not contain active R1.');
+      const priorStatus=await page.evaluate(gameReleaseId=>window.W01Preview.sendWorker({
+        type:'W01_GET_STATUS',gameReleaseId
+      }),expected.manifest.gameReleaseId);
+      assert.equal(priorStatus.ok,true,'Existing R1 status could not be read from the extension worker.');
+      assert.equal(priorStatus.active.dataRevision,priorDataRevision);
+      assert.equal(priorStatus.active.gameReleaseId,expected.manifest.gameReleaseId);
+      assert.equal(priorStatus.active.gameVersion,expected.entry.game_version);
+      assert.equal(priorStatus.active.fixtureOnly,expected.packageKind==='fixture',
+        'R1 and R2 must use the same DEV package kind.');
+      assert.equal(priorStatus.active.publicationEligible,false);
       await context.setOffline(true);
       await page.locator('#load-preview').click();
       await page.waitForFunction(()=>window.W01Preview&&window.W01Preview.getLastActivation()&&
@@ -221,10 +231,13 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
         sha256:expected.files[kind].sha256
       });
     }
-    assert.equal(activation.active.fixtureOnly,true);
+    assert.equal(activation.active.fixtureOnly,expected.packageKind==='fixture');
     assert.equal(activation.active.publicationEligible,false);
     await page.waitForFunction(()=>document.body.dataset.w01State==='active');
-    assert.ok((await page.locator('#data-status').textContent()).includes('合成 Fixture 資料'));
+    const statusText=await page.locator('#data-status').textContent();
+    assert.ok(statusText.includes(expected.packageKind==='fixture'?'合成 Fixture 資料':'待審資料'));
+    if(expected.packageKind==='pending-preview')
+      assert.ok(statusText.includes('代碼快照與文字版本相容性尚未核實'));
     assert.ok((await page.locator('#snapshot-info').textContent()).includes(expected.entry.data_revision));
 
     const contentCards=await page.locator('#content-cards').textContent();
@@ -285,7 +298,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       devProgram:{root:built.outputRoot,extensionPath:built.extensionPath,profilePath,
         aggregateSha256:program.sha256,files:program.files},
       package:{buildId:expected.version.build_id,gameReleaseId:expected.manifest.gameReleaseId,
-        gameVersion:expected.entry.game_version,contentVersion:expected.entry.content_version,
+        packageKind:expected.packageKind,gameVersion:expected.entry.game_version,contentVersion:expected.entry.content_version,
         dataRevision:expected.entry.data_revision,manifestSha256:expected.manifestSha256,
         domainHashes:Object.fromEntries(REQUIRED_KINDS.map(kind=>[kind,expected.files[kind].sha256])),
         fixtureOnly:activation.active.fixtureOnly,publicationEligible:activation.active.publicationEligible},
@@ -294,7 +307,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       announcementsFetched:false,
       rendered:{skills:skillPresentations.length,blessings:blessingPresentations.length,
         weapons:weaponPresentations.length,terms:localizedTerms.length,
-        faithfulZhTwOfficialText:true,fiveDetailSections:true},
+        zhTwLocalizedText:true,fiveDetailSections:true},
       transition:transitionEvidence,
       errors:{console:consoleErrors,page:pageErrors},
       screenshot:{path:screenshotPath,sizeBytes:screenshotBytes.byteLength,sha256:sha256(screenshotBytes)},
@@ -323,6 +336,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       responseStatuses:requests.map(request=>request.status),
       responseContentTypes:requests.map(request=>request.contentType),
       buildId:expected.version.build_id,
+      packageKind:expected.packageKind,
       gameReleaseId:expected.manifest.gameReleaseId,
       gameVersion:expected.entry.game_version,
       contentVersion:expected.entry.content_version,

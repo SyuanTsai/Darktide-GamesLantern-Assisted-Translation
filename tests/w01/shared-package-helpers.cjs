@@ -34,6 +34,8 @@ function inspectSharedPackage(packagePath){
   assertPlainDirectory(root);
   const versionBytes=fs.readFileSync(resolvePackageFile(root,'version.json'));
   const version=JSON.parse(versionBytes.toString('utf8'));
+  if(!['fixture','pending-preview'].includes(version.package_kind))
+    throw new Error('Shared package kind is not enabled for the DEV loader');
   if(!Array.isArray(version.game_releases)||version.game_releases.length!==1)
     throw new Error('Shared package must contain one preview game release');
   const entry=version.game_releases[0];
@@ -44,6 +46,9 @@ function inspectSharedPackage(packagePath){
   const manifestSha256=sha256(manifestBytes);
   if(manifestSha256!==entry.manifest_sha256) throw new Error('Local manifest hash differs from version.json');
   const manifest=JSON.parse(manifestBytes.toString('utf8'));
+  const expectedFixtureOnly=version.package_kind==='fixture';
+  if(manifest.fixtureOnly!==expectedFixtureOnly||manifest.publicationEligible!==false)
+    throw new Error('Shared package flags do not match its DEV package kind');
   const dataRevision=entry.data_revision;
   if(manifest.dataRevision!==dataRevision||manifest.gameVersion!==entry.game_version||
     manifest.contentVersion!==entry.content_version)
@@ -64,7 +69,12 @@ function inspectSharedPackage(packagePath){
     files[kind]={path:metadata.path,sizeBytes:bytes.byteLength,sha256:digest,bytes};
     routes.set('/data/'+dataRevision+'/'+metadata.path,bytes);
   }
-  return {root,versionBytes,version,entry,manifestBytes,manifest,manifestSha256,files,routes};
+  return {root,versionBytes,version,packageKind:version.package_kind,entry,manifestBytes,manifest,manifestSha256,files,routes};
+}
+function loaderOptionsForPackage(bundle){
+  if(bundle.packageKind==='fixture') return {allowFixture:true,allowPendingPreview:false};
+  if(bundle.packageKind==='pending-preview') return {allowFixture:false,allowPendingPreview:true};
+  throw new Error('Shared package kind is not enabled for the DEV loader');
 }
 function createPackageFetch(bundle,requests=[]){
   return async(input,options)=>{
@@ -102,4 +112,5 @@ function createMemoryStore(){
   };
 }
 
-module.exports={DEV_ORIGIN,REQUIRED_KINDS,sha256,inspectSharedPackage,createPackageFetch,createMemoryStore};
+module.exports={DEV_ORIGIN,REQUIRED_KINDS,sha256,inspectSharedPackage,loaderOptionsForPackage,
+  createPackageFetch,createMemoryStore};

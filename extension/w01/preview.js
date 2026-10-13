@@ -83,7 +83,16 @@
     const block=node('section',undefined,'official-copy');
     block.append(node('h4','官方字串與繁中呈現'));
     const localized=official.localizations&&official.localizations['zh-TW'];
-    if(localized&&typeof localized.text==='string'){
+    if(localized&&localized.origin==='official'&&typeof localized.sourceText==='string'){
+      const group=node('div',undefined,'text-pair');
+      group.append(node('span','官方繁體中文原始字串','field-label'),node('p',localized.sourceText));
+      block.append(group);
+      if(typeof localized.resolvedText==='string'&&localized.resolvedText!==localized.sourceText){
+        const resolved=node('div',undefined,'text-pair');
+        resolved.append(node('span','代入已知參數後的呈現','field-label'),node('p',localized.resolvedText));
+        block.append(resolved);
+      }
+    }else if(localized&&typeof localized.text==='string'){
       const group=node('div',undefined,'text-pair');
       group.append(node('span','繁體中文','field-label'),node('p',localized.text));
       block.append(group);
@@ -248,14 +257,16 @@
       notice.append(node('span',' 此資料不是已確認的遊戲事實。'));
       notice.classList.add('fixture-notice');
     }else if(manifest.publicationEligible!==true){
-      notice.append(node('strong','非發布資料'));
-      notice.append(node('span',' 此套件尚未標記為可發布。'));
+      notice.append(node('strong','待審資料'));
+      notice.append(node('span',' 代碼快照與文字版本相容性尚未核實；此預覽不代表發布內容。'));
       notice.classList.add('fixture-notice');
     }else{
       notice.classList.remove('fixture-notice');
     }
     if(hasPending||manifest.publicationEligible!==true){
-      notice.append(node('p','內容含待審記錄或未通過發布條件；保留來源文字與勘誤的分離呈現。'));
+      if(manifest.fixtureOnly===true)
+        notice.append(node('p','內容含待審記錄或未通過發布條件；保留來源文字與勘誤的分離呈現。'));
+      else notice.append(node('p','內容含待審記錄；官方原文與獨立勘誤分開顯示。'));
       notice.classList.add('pending-notice');
     }else{
       notice.classList.remove('pending-notice');

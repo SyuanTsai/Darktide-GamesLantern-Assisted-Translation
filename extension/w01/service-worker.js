@@ -57,7 +57,7 @@ function sendActiveSnapshot(gameReleaseId,sendResponse,includeDomains=false){
   respondWith((async()=>{
     const active=await store.getActive(gameReleaseId);
     if(!active) return includeDomains?{snapshot:null}:{active:null};
-    const verified=await loader.verifyStoredSnapshot(active,{allowFixture:true});
+    const verified=await loader.verifyStoredSnapshot(active,{allowFixture:true,allowPendingPreview:true});
     if(!includeDomains) return {active:summary(verified)};
     return {snapshot:{active:summary(verified),manifest:verified.manifest,domains:verified.domains}};
   })(),sendResponse);
@@ -101,7 +101,8 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
           store,
           gameVersion:message.gameVersion,
           gameReleaseId:message.gameReleaseId,
-          allowFixture:true
+          allowFixture:true,
+          allowPendingPreview:true
         });
         return {active:summary(snapshot),networkRequests:tracked.requests};
       }catch(error){
@@ -117,7 +118,8 @@ chrome.runtime.onMessage.addListener((message,sender,sendResponse)=>{
         store,
         gameReleaseId:message.gameReleaseId,
         dataRevision:message.dataRevision,
-        allowFixture:true
+        allowFixture:true,
+        allowPendingPreview:true
       });
       return {active:summary(snapshot)};
     })(),sendResponse);

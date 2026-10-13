@@ -3,6 +3,7 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {DEV_ORIGIN,rollback,REQUIRED_KINDS,verifyStoredSnapshot}=require('../../extension/w01/loader-core.js');
 const {GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,createRelease,refreshVersion,rewriteDomain,MemoryStore,activate,json,digest}=require('./fixtures.cjs');
+const {nativeRelease}=require('./native-fixtures.cjs');
 test('UnitT10_LoadsOnlyTheRequiredSharedDomainsAndActivatesOneSnapshot',async()=>{
   // Scenario: Given a valid v17-D preview version, shared manifest, source registry, and four domain files.
   // Purpose: Verify exact byte hashes, dependency closure, fixed HTTPS origin, record references, and atomic snapshot handoff.
@@ -123,6 +124,108 @@ test('UnitT55_EnforcesOwnerScopedWebRefsOfficialHashesAndASections',async()=>{
   }
 });
 
+test('UnitT56_PendingPreviewRequiresAnExplicitDevOptIn',async()=>{
+  // Scenario: Given a non-fixture, non-published pending-preview package at the fixed preview origin.
+  // Purpose: Keep candidate data unavailable unless the DEV loader explicitly enables pending previews.
+  const release=nativeRelease();
+  await assert.rejects(()=>activate(release,new MemoryStore()),/pending-preview.*disabled|pending preview.*disabled/i);
+});
+
+test('UnitT57_AcceptsNativeOfficialZhTwWithHashIdentityAndExactNumberBinding',async()=>{
+  // Scenario: Given synthetic native EN and zh-TW source spans keyed by an eight-hex hash with a null reverse key.
+  // Purpose: Preserve both official templates and resolve only the bound decimal while retaining the zh-TW unit.
+  const release=nativeRelease(),store=new MemoryStore();
+  const {result}=await activate(release,store,{allowPendingPreview:true});
+  const official=result.domains.skills.records.find(item=>item.kind==='presentation').payload.official;
+  const localized=official.localizations['zh-TW'];
+  assert.equal(official.key,null);
+  assert.equal(official.sourceHash,'a1b2c3d4');
+  assert.equal(official.occurrence,1);
+  assert.equal(official.segments.map(item=>item.text).join(''),official.sourceText);
+  assert.equal(official.resolvedText,'Synthetic cooldown 35 seconds.');
+  assert.equal(official.params[0].bindingRef,'fixture:claim:a');
+  assert.equal(localized.origin,'official');
+  assert.equal(localized.key,'fixture.cooldown.zh');
+  assert.equal(localized.sourceHash,'b1b2c3d4');
+  assert.equal(localized.occurrence,2);
+  assert.equal(localized.sourceText,'合成冷卻 {cooldown:%s} 秒。');
+  assert.equal(localized.resolvedText,'合成冷卻 35 秒。');
+  assert.equal(localized.text,localized.resolvedText);
+  assert.equal(result.manifest.fixtureOnly,false);
+  assert.equal(result.manifest.publicationEligible,false);
+  const stored=await store.getSnapshot(GAME_RELEASE_ID,release.dataRevision);
+  await assert.rejects(()=>verifyStoredSnapshot(stored),/pending-preview package is disabled/i);
+  await verifyStoredSnapshot(stored,{allowPendingPreview:true});
+  assert.ok(!release.fetches.some(url=>url.endsWith('/game-changes.json')));
+});
+
+test('UnitT58_ValidatesSourcePercentAndWebOfficialNameBindings',async()=>{
+  // Scenario: Given native placeholders bound to a known Source percent claim or a same-locale Web official-name ref.
+  // Purpose: Limit substitutions to the approved decimal/percent and Web registry forms without reading summaries as text.
+  for(const format of ['signed-percent','official-name']){
+    const release=nativeRelease({format});
+    const {result}=await activate(release,new MemoryStore(),{allowPendingPreview:true});
+    const localized=result.domains.skills.records.find(item=>item.kind==='presentation').payload.official.localizations['zh-TW'];
+    assert.equal(localized.resolvedText,format==='signed-percent'?'合成移動速度 +17%。':'合成武器 合成鏈斧。');
+  }
+});
+
+test('UnitT59_RejectsNativeIdentityMismatchAndInvalidCandidatePolicy',async()=>{
+  // Scenario: Given native localization bound to another resource hash or pending-preview flags that claim fixture/publication.
+  // Purpose: Require exact locale identity and false fixture/publication flags for explicit candidate opt-in.
+  const mismatch=nativeRelease();
+  rewriteDomain(mismatch,'skills',doc=>{
+    doc.records.find(item=>item.kind==='presentation').payload.official.localizations['zh-TW'].sourceHash='0000000G';
+  });
+  await assert.rejects(()=>activate(mismatch,new MemoryStore(),{allowPendingPreview:true}),/native.*identity|localization identity/i);
+  const foreignBinding=nativeRelease();
+  rewriteDomain(foreignBinding,'skills',doc=>{
+    doc.records.find(item=>item.recordId==='fixture:claim:a').payload.targetRef='fixture:blessing:a';
+  });
+  await assert.rejects(()=>activate(foreignBinding,new MemoryStore(),{allowPendingPreview:true}),/native numeric binding targets another entity/i);
+  const wrongPercentUnit=nativeRelease({format:'signed-percent'});
+  rewriteDomain(wrongPercentUnit,'skills',doc=>{
+    doc.records.find(item=>item.recordId==='fixture:claim:percent').payload.value.unit='ratio';
+  });
+  await assert.rejects(()=>activate(wrongPercentUnit,new MemoryStore(),{allowPendingPreview:true}),/Source percent claim/i);
+  const percentUsedAsPlainNumber=nativeRelease();
+  rewriteDomain(percentUsedAsPlainNumber,'skills',doc=>{
+    doc.records.find(item=>item.recordId==='fixture:claim:a').payload.value.unit='percent';
+  });
+  await assert.rejects(()=>activate(percentUsedAsPlainNumber,new MemoryStore(),{allowPendingPreview:true}),/plain-number binding/i);
+  const missingFeature=nativeRelease({includeFeature:false});
+  await assert.rejects(()=>activate(missingFeature,new MemoryStore(),{allowPendingPreview:true}),/requires official-native-localizations-v1/i);
+  const summaryAsName=nativeRelease({format:'official-name'});
+  rewriteDomain(summaryAsName,'skills',doc=>{
+    delete summaryAsName.manifest.web.references.find(item=>item.sourceId==='fixture-web-name-zh').officialName;
+  });
+  await assert.rejects(()=>activate(summaryAsName,new MemoryStore(),{allowPendingPreview:true}),/official-name binding/i);
+  const sourceOwnedName=nativeRelease({format:'official-name'});
+  sourceOwnedName.manifest.source.references[0].officialName=
+    sourceOwnedName.manifest.web.references.find(item=>item.sourceId==='fixture-web-name-en').officialName;
+  refreshVersion(sourceOwnedName);
+  await assert.rejects(()=>activate(sourceOwnedName,new MemoryStore(),{allowPendingPreview:true}),
+    /official-name metadata is restricted to the Web/i);
+  const missingDirectDependency=nativeRelease();
+  missingDirectDependency.manifest.files.find(item=>item.kind==='skills').dependencies=[];
+  refreshVersion(missingDirectDependency);
+  await assert.rejects(()=>activate(missingDirectDependency,new MemoryStore(),{allowPendingPreview:true}),
+    /native manifest dependencies do not match direct record references: skills/i);
+  const unfetchedDependency=nativeRelease();
+  unfetchedDependency.manifest.files.find(item=>item.kind==='skills').dependencies.push('game-changes');
+  refreshVersion(unfetchedDependency);
+  await assert.rejects(()=>activate(unfetchedDependency,new MemoryStore(),{allowPendingPreview:true}),
+    /depends on an unfetched domain/i);
+  for(const change of [
+    release=>{release.manifest.fixtureOnly=true;refreshVersion(release);},
+    release=>{release.manifest.publicationEligible=true;refreshVersion(release);},
+    release=>{release.version.package_kind='fixture';release.routes.set('/version.json',json(release.version));}
+  ]){
+    const release=nativeRelease();change(release);
+    await assert.rejects(()=>activate(release,new MemoryStore(),{allowPendingPreview:true}),/pending-preview|candidate|fixture|publication/i);
+  }
+});
+
 test('UnitT60_FailedUpdateKeepsActiveAndLegalRollbackSelectsOlderSameRelease',async()=>{
   // Scenario: Given r1 active, an invalid r2 attempt, then a valid r2 while r1 remains cached.
   // Purpose: Verify failed update preservation and rollback only to an available older compatible snapshot.
@@ -141,6 +244,114 @@ test('UnitT60_FailedUpdateKeepsActiveAndLegalRollbackSelectsOlderSameRelease',as
   assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,DATA_R1);
   await assert.rejects(()=>rollback({store,gameReleaseId:GAME_RELEASE_ID,dataRevision:DATA_R2}),/older|rollback|version/i);
   await assert.rejects(()=>rollback({store,gameReleaseId:'another-release',dataRevision:DATA_R1}),/snapshot|release|identity/i);
+});
+
+test('UnitT61_ValidatesNativeEnglishResolutionLocaleOwnedNamesAndAtomicFailure',async()=>{
+  // Scenario: Given a native English and zh-TW source string with independent locale identities and typed bindings.
+  // Purpose: Verify both original templates resolve from same-locale Web names or same-entity Source claims before activation.
+  const englishMismatch=nativeRelease({dataRevision:'5'.repeat(64),contentVersion:'0.0.5'});
+  const activeStore=new MemoryStore();
+  await activate(englishMismatch,activeStore,{allowPendingPreview:true});
+  const badEnglish=nativeRelease({dataRevision:'6'.repeat(64),contentVersion:'0.0.6'});
+  rewriteDomain(badEnglish,'skills',doc=>{
+    const official=doc.records.find(item=>item.kind==='presentation').payload.official;
+    official.resolvedText='Synthetic cooldown 34 seconds.';
+    official.resolvedTextSha256=digest(Buffer.from(official.resolvedText,'utf8'));
+  });
+  await assert.rejects(()=>activate(badEnglish,activeStore,{allowPendingPreview:true}),
+    /native English official text resolved text does not match ordered placeholder bindings/i);
+  assert.equal((await activeStore.getActive(GAME_RELEASE_ID)).dataRevision,englishMismatch.dataRevision);
+
+  const wrongEnglishNameLocale=nativeRelease({format:'official-name'});
+  wrongEnglishNameLocale.manifest.web.references.find(item=>item.sourceId==='fixture-web-name-en')
+    .officialName.sourceLocale='zh-TW';
+  refreshVersion(wrongEnglishNameLocale);
+  await assert.rejects(()=>activate(wrongEnglishNameLocale,new MemoryStore(),{allowPendingPreview:true}),
+    /native English official text official-name binding is not the same-locale official text/i);
+
+  const crossEntityEnglishClaim=nativeRelease();
+  rewriteDomain(crossEntityEnglishClaim,'skills',doc=>{
+    doc.records.find(item=>item.kind==='claim'&&item.recordId==='fixture:claim:a').payload.targetRef='fixture:blessing:a';
+  });
+  await assert.rejects(()=>activate(crossEntityEnglishClaim,new MemoryStore(),{allowPendingPreview:true}),
+    /native numeric binding targets another entity/i);
+});
+
+test('UnitT62_NativeNumericBindingsRequireDisplayDerivedSources',async()=>{
+  // Scenario: Given native numeric placeholders sourced from a description formatter, the exact time override, or re-sealed alternatives.
+  // Purpose: Prevent gameplay values and raw ratios from replacing official text placeholders while retaining the known 2-second exception.
+  const r1=nativeRelease({format:'signed-percent',dataRevision:'7'.repeat(64),contentVersion:'0.0.7'});
+  const store=new MemoryStore();
+  await activate(r1,store,{allowPendingPreview:true});
+  const invalidMutations=[
+    {edit:claim=>{claim.payload.basis='game-tested';},expected:/code-derived description format value/i},
+    {edit:claim=>{claim.payload.property='final_damage_percent';},expected:/code-derived description format value/i}
+  ];
+  for(const {edit,expected} of invalidMutations){
+    const candidate=nativeRelease({format:'signed-percent',dataRevision:'8'.repeat(64),contentVersion:'0.0.8'});
+    rewriteDomain(candidate,'skills',doc=>{
+      edit(doc.records.find(item=>item.recordId==='fixture:claim:percent'));
+    });
+    await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),expected);
+    assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,r1.dataRevision);
+  }
+
+  const time=nativeRelease({numberName:'time',dataRevision:'9'.repeat(64),contentVersion:'0.0.9'});
+  const timeResult=await activate(time,new MemoryStore(),{allowPendingPreview:true});
+  const timeOfficial=timeResult.result.domains.skills.records.find(item=>item.kind==='presentation').payload.official;
+  const timeClaim=timeResult.result.domains.skills.records.find(item=>item.recordId==='fixture:claim:a').payload;
+  assert.equal(timeClaim.basis,'code-observed');
+  assert.equal(timeClaim.property,'template.buff_override.active_duration');
+  assert.deepEqual(timeClaim.value,{status:'known',decimal:'2',unit:'s'});
+  assert.equal(timeOfficial.params[0].bindingRef,'fixture:claim:a');
+  assert.equal(timeOfficial.resolvedText,'Synthetic active duration 2 seconds.');
+  assert.equal(timeOfficial.localizations['zh-TW'].resolvedText,'合成持續時間 2 秒。');
+
+  const switched=nativeRelease({format:'signed-percent',
+    dataRevision:'a'.repeat(64),contentVersion:'0.0.10'});
+  rewriteDomain(switched,'skills',doc=>{
+    const claim=doc.records.find(item=>item.recordId==='fixture:claim:percent');
+    claim.payload.basis='code-observed';
+    claim.payload.property='template.stat_buffs.multiplier';
+    claim.payload.value={status:'known',decimal:'1.5',unit:'ratio'};
+    const official=doc.records.find(item=>item.kind==='presentation').payload.official;
+    for(const sourceText of [official,official.localizations['zh-TW']]){
+      const param=sourceText.params[0];
+      param.format='plain-number';
+      param.resolvedValue='1.5';
+      sourceText.resolvedText=sourceText.sourceText.replace(param.placeholder,param.resolvedValue);
+      sourceText.resolvedTextSha256=digest(Buffer.from(sourceText.resolvedText,'utf8'));
+      if(sourceText.origin==='official'){
+        sourceText.text=sourceText.resolvedText;
+        sourceText.sha256=sourceText.resolvedTextSha256;
+      }
+    }
+  });
+  const beforeFailure=await store.getActive(GAME_RELEASE_ID);
+  await assert.rejects(()=>activate(switched,store,{allowPendingPreview:true}),
+    /code-derived description format value or the exact active-duration override/i);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,beforeFailure.dataRevision);
+});
+
+test('UnitT63_LegacyOfficialSegmentsRejectDuplicateIdsAfterValidReseal',async()=>{
+  // Scenario: Given an existing faithful-translation fixture with duplicate span IDs but valid text, segment, domain, and manifest hashes.
+  // Purpose: Preserve legacy anchor identity validation and leave the active snapshot unchanged on this semantic failure.
+  const r1=createRelease({dataRevision:'7'.repeat(64),contentVersion:'0.0.7'});
+  const store=new MemoryStore();
+  await activate(r1,store);
+  const candidate=createRelease({dataRevision:'8'.repeat(64),contentVersion:'0.0.8'});
+  rewriteDomain(candidate,'skills',doc=>{
+    const official=doc.records.find(item=>item.kind==='presentation').payload.official;
+    const split=Math.floor(official.sourceText.length/2);
+    const first=official.sourceText.slice(0,split),second=official.sourceText.slice(split);
+    official.segments=[
+      {segmentId:'duplicate',text:first,sha256:digest(Buffer.from(first,'utf8'))},
+      {segmentId:'duplicate',text:second,sha256:digest(Buffer.from(second,'utf8'))}
+    ];
+    doc.records.find(item=>item.kind==='presentation').payload.errata=[];
+  });
+  await assert.rejects(()=>activate(candidate,store),/duplicate presentation official segment id/i);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,r1.dataRevision);
 });
 
 test('UnitT70_StorageCommitFailureNeverReplacesTheCurrentSnapshot',async()=>{

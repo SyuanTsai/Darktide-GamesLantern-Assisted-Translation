@@ -9,6 +9,7 @@ const {
   GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,
   createRelease,rewriteDomain
 }=require('./fixtures.cjs');
+const {nativeRelease}=require('./native-fixtures.cjs');
 const {loadPlaywright}=require('./playwright-runtime.cjs');
 
 function serializeRoutes(release){
@@ -195,5 +196,93 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
   }finally{
     if(context) await context.close();
     process.chdir(originalWorkingDirectory);
+  }
+});
+
+// Scenario: Given a synthetic pending-preview package with native zh-TW official source spans and one bound number.
+// Purpose: Verify the loaded MV3 page labels the data as pending and renders official source/template text safely.
+test('InterT12_RendersNativeOfficialZhTwAndPendingCompatibilityNotice',async t=>{
+  const {playwright,version:playwrightVersion}=loadPlaywright();
+  const built=buildDevExtension({includeTestHarness:true});
+  const profilePath=path.join(built.outputRoot,'profile');
+  const screenshot=path.join(built.outputRoot,'preview-native-pending.png');
+  const candidate=nativeRelease();
+  const candidateR2=nativeRelease({dataRevision:'4'.repeat(64),contentVersion:'0.0.4'});
+  rewriteDomain(candidateR2,'skills',document=>{
+    document.records.find(record=>record.kind==='presentation').payload.name='示意技能修訂2';
+  });
+  let context;
+  const pageErrors=[];
+  const consoleErrors=[];
+  try{
+    context=await playwright.chromium.launchPersistentContext(profilePath,{
+      channel:'chromium',executablePath:process.env.SYP_W01_CHROMIUM_EXE||undefined,
+      headless:true,viewport:{width:1180,height:900},ignoreDefaultArgs:['--disable-extensions'],
+      args:['--disable-extensions-except='+built.extensionPath,'--load-extension='+built.extensionPath]
+    });
+    let worker=context.serviceWorkers().find(candidateWorker=>candidateWorker.url().endsWith('/service-worker.js'));
+    if(!worker) worker=await context.waitForEvent('serviceworker',{timeout:15000});
+    const extensionId=new URL(worker.url()).host;
+    const page=await context.newPage();
+    page.on('pageerror',error=>pageErrors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error') consoleErrors.push(message.text());});
+    await page.goto('chrome-extension://'+extensionId+'/idb-harness.html');
+    await page.waitForFunction(()=>typeof window.activateW01PendingPreview==='function');
+    const active=await page.evaluate(input=>window.activateW01PendingPreview(input),{
+      gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,routes:serializeRoutes(candidate)
+    });
+    assert.equal(active.dataRevision,candidate.dataRevision);
+    const invalidRoutes=serializeRoutes(candidateR2);
+    invalidRoutes['/data/'+candidateR2.dataRevision+'/skills.json']=Buffer.from('tampered').toString('base64');
+    const invalidRejected=await page.evaluate(async input=>{
+      try{await window.activateW01PendingPreview(input);return false;}catch{return true;}
+    },{gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,routes:invalidRoutes});
+    assert.equal(invalidRejected,true);
+    const activeAfterInvalid=await page.evaluate(input=>new Promise(resolve=>{
+      chrome.runtime.sendMessage({type:'W01_GET_STATUS',gameReleaseId:input.gameReleaseId},resolve);
+    }),{gameReleaseId:GAME_RELEASE_ID});
+    assert.equal(activeAfterInvalid.active.dataRevision,candidate.dataRevision);
+    const updated=await page.evaluate(input=>window.activateW01PendingPreview(input),{
+      gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,routes:serializeRoutes(candidateR2)
+    });
+    assert.equal(updated.dataRevision,candidateR2.dataRevision);
+    const rollback=await page.evaluate(input=>new Promise(resolve=>{
+      chrome.runtime.sendMessage({type:'W01_ROLLBACK',gameReleaseId:input.gameReleaseId,
+        dataRevision:input.dataRevision},resolve);
+    }),{gameReleaseId:GAME_RELEASE_ID,dataRevision:candidate.dataRevision});
+    assert.equal(rollback.ok,true);
+    assert.equal(rollback.active.dataRevision,candidate.dataRevision);
+    await page.goto('chrome-extension://'+extensionId+'/preview.html');
+    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
+      document.getElementById('snapshot-metadata').textContent.includes('0.0.3'));
+    const notice=await page.locator('#data-status').textContent();
+    assert.ok(notice.includes('待審資料'));
+    assert.ok(notice.includes('代碼快照與文字版本相容性尚未核實'));
+    const official=page.locator('#content-cards .official-copy').first();
+    assert.ok((await official.textContent()).includes('官方繁體中文原始字串'));
+    assert.ok((await official.textContent()).includes('合成冷卻 {cooldown:%s} 秒。'));
+    assert.ok((await official.textContent()).includes('合成冷卻 35 秒。'));
+    assert.equal(await official.locator('script,em').count(),0);
+    await page.screenshot({path:screenshot,fullPage:true});
+    assert.deepEqual(pageErrors,[]);
+    assert.deepEqual(consoleErrors,[]);
+    t.diagnostic(JSON.stringify({
+      devBuild:'unpacked MV3 extension; private persistent profile',
+      playwrightVersion,projectDeclaredPlaywright:'1.62.1',chromeVersion:context.browser().version(),
+      packageKind:candidate.version.package_kind,dataRevision:candidate.dataRevision,
+      pendingPreviewCompatibilityNoticeVisible:true,
+      nativeOfficialSourceAndResolvedTextVisible:true,
+      invalidUpdatePreservedR1:true,validNativeR2UpdatedAndRolledBack:true,
+      htmlTextRenderedLiterally:true,consoleErrors,pageErrors,screenshot
+    },null,2));
+  }catch(error){
+    if(error.message.includes('spawn UNKNOWN')){
+      t.diagnostic('Bundled Chromium could not start: '+error.message);
+      t.skip('Loaded-extension native renderer test unavailable because Chromium failed to start.');
+      return;
+    }
+    throw error;
+  }finally{
+    if(context) await context.close();
   }
 });

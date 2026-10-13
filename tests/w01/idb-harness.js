@@ -114,6 +114,18 @@ async function activateW01PreviewR2(input){
   });
   return snapshotSummary(result);
 }
+async function activateW01PendingPreview(input){
+  const result=await W01SharedLoader.loadAndActivate({
+    fetchImpl:fixedFixtureFetch(input.routes),
+    store:new W01SharedLoader.IndexedDbSnapshotStore(),
+    gameVersion:input.gameVersion,
+    gameReleaseId:input.gameReleaseId,
+    allowFixture:true,
+    allowPendingPreview:true
+  });
+  return snapshotSummary(result);
+}
 window.runW01IdbScenario=runW01IdbScenario;
 window.runW01PreviewFaultStages=runW01PreviewFaultStages;
 window.activateW01PreviewR2=activateW01PreviewR2;
+window.activateW01PendingPreview=activateW01PendingPreview;
