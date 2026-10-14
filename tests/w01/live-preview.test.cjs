@@ -72,6 +72,11 @@ function presentationNames(bundle,domainKind,entityKind){
   assert.ok(presentations.length>0,'Compiled package has no zh-TW '+entityKind+' presentation');
   return presentations;
 }
+function tieredBlessingPresentations(bundle){
+  const document=JSON.parse(bundle.files.blessings.bytes.toString('utf8'));
+  return document.records.filter(record=>record.owner==='web'&&record.kind==='presentation'&&
+    record.payload&&record.payload.tierPresentations);
+}
 function summarizePreviewRequest(request){
   let requestPath='unknown';
   try{
@@ -338,6 +343,40 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       skillPresentations[0].payload.official.localizations['zh-TW'];
     assert.ok(localizedOfficial&&typeof localizedOfficial.text==='string');
     assert.ok(contentCards.includes(localizedOfficial.text));
+    const tierSelectorEvidence=[];
+    const requiredFeatures=expected.manifest.compatibility.requiredFeatures;
+    const hasTierFeature=requiredFeatures.includes('blessing-tier-presentations-v1');
+    const tieredBlessings=tieredBlessingPresentations(expected);
+    assert.equal(hasTierFeature,tieredBlessings.length>0,
+      'The blessing tier feature must be advertised exactly when tiered presentations are present.');
+    if(hasTierFeature){
+      assert.ok(requiredFeatures.includes('official-native-localizations-v1'));
+      assert.equal(tieredBlessings.length,1,'The W01 shared package has one explicitly selected tier presentation.');
+      const presentation=tieredBlessings[0];
+      const card=page.locator('#content-cards .entity-card').filter({hasText:presentation.payload.name}).first();
+      const selector=card.locator('select[aria-label="祝福階級"]');
+      assert.equal(await selector.locator('option').count(),4);
+      assert.deepEqual(await selector.locator('option').allTextContents(),['LV1','LV2','LV3','LV4']);
+      assert.equal(await selector.inputValue(),'4','Tier four is the initial selection.');
+      const selected=card.locator('.tier-selected-presentation');
+      for(const tier of [4,1,2,3,4]){
+        await selector.selectOption(String(tier));
+        const option=presentation.payload.tierPresentations.options.find(item=>item.tier===tier);
+        assert.ok(option,'The compiled package is missing the selected tier option.');
+        const selectedText=await selected.textContent();
+        assert.ok(selectedText.includes('目前選取：LV'+String(tier)));
+        assert.ok(selectedText.includes(option.official.localizations['zh-TW'].resolvedText),
+          'The selected native zh-TW official string must match the same tier option.');
+        for(const section of Object.values(option.detailSections)){
+          for(const item of section){
+            if(typeof item.text==='string') assert.ok(selectedText.includes(item.text),
+              'The selected tier details must come from the same option as its official string.');
+          }
+        }
+        assert.equal(await selected.locator('.detail-section').count(),5);
+        tierSelectorEvidence.push({tier,officialZhTwMatched:true,detailTextMatched:true,fiveSectionsVisible:true});
+      }
+    }
     const localizedTerms=termLocalizations(expected);
     const renderedTermNames=await page.locator('#term-cards .entity-card h3').allTextContents();
     for(const term of localizedTerms){
@@ -393,7 +432,8 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       announcementsFetched:false,
       rendered:{skills:skillPresentations.length,blessings:blessingPresentations.length,
         weapons:weaponPresentations.length,terms:localizedTerms.length,
-        zhTwLocalizedText:true,fiveDetailSections:true},
+        zhTwLocalizedText:true,fiveDetailSections:true,
+        blessingTierSequence:tierSelectorEvidence},
       transition:transitionEvidence,
       errors:{console:consoleErrors,page:pageErrors},
       screenshot:{path:screenshotPath,sizeBytes:screenshotBytes.byteLength,sha256:sha256(screenshotBytes)},

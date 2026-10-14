@@ -98,6 +98,8 @@ button:focus-visible, input:focus-visible, select:focus-visible {
 .erratum p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .detail-section ul { margin: 4px 0; padding-left: 24px; }
 .detail-section li { margin: 5px 0; }
+.tier-selector-label { margin: 8px 0; max-width: 280px; }
+.selected-tier-label { font-weight: 700; }
 .term-reference {
   background: #f1f5fa;
   border-radius: 6px;

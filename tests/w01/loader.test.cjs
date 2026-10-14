@@ -2,7 +2,8 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {DEV_ORIGIN,rollback,REQUIRED_KINDS,verifyStoredSnapshot}=require('../../extension/w01/loader-core.js');
-const {GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,createRelease,refreshVersion,rewriteDomain,MemoryStore,activate,json,digest}=require('./fixtures.cjs');
+const {GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,createRelease,refreshVersion,rewriteDomain,MemoryStore,activate,json,digest,
+  tieredNativeRelease}=require('./fixtures.cjs');
 const {nativeRelease}=require('./native-fixtures.cjs');
 function addPublicSourceLocator(release){
   const reference=release.manifest.source.references[0];
@@ -509,6 +510,212 @@ test('UnitT70_StorageCommitFailureNeverReplacesTheCurrentSnapshot',async()=>{
   store.failCommit=true;
   await assert.rejects(()=>activate(r2,store),/commit failure/i);
   assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,DATA_R1);
+});
+
+test('UnitT72_ValidatesFourTierNativePresentationAgainstItsSourceClaims',async()=>{
+  // Scenario: Given a pending blessing package with four explicit native tier options and matching Source claims.
+  // Purpose: Verify the new feature gate, exact LV1–LV4 bindings, and the LV4 root presentation before activation.
+  const release=tieredNativeRelease({dataRevision:'c'.repeat(64),contentVersion:'0.0.72'});
+  const {result,store}=await activate(release,new MemoryStore(),{allowPendingPreview:true});
+  const presentation=result.domains.blessings.records.find(record=>record.kind==='presentation');
+  const tierPresentations=presentation.payload.tierPresentations;
+  assert.ok(result.manifest.compatibility.requiredFeatures.includes('official-native-localizations-v1'));
+  assert.ok(result.manifest.compatibility.requiredFeatures.includes('blessing-tier-presentations-v1'));
+  assert.equal(tierPresentations.defaultTier,4);
+  assert.deepEqual(tierPresentations.options.map(option=>option.tier),[1,2,3,4]);
+  assert.deepEqual(presentation.payload.official,tierPresentations.options[3].official);
+  assert.deepEqual(presentation.payload.detailSections,tierPresentations.options[3].detailSections);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,release.dataRevision);
+  assert.equal(release.fetches.length,6);
+
+  const sourceBacked=tieredNativeRelease({dataRevision:'e'.repeat(64),contentVersion:'0.0.721'});
+  rewriteDomain(sourceBacked,'blessings',document=>{
+    const variant=document.records.find(record=>record.kind==='blessing-variant');
+    variant.payload.tierValues[1].value.decimal='0.185';
+    document.records.find(record=>record.recordId==='fixture:blessing:tier-2-percent').payload.value.decimal='18.5';
+    const presentation=document.records.find(record=>record.kind==='presentation');
+    const option=presentation.payload.tierPresentations.options[1];
+    option.detailSections.effects[0].text='Synthetic tier 2 movement effect at +18.5%.';
+    const official=option.official;
+    for(const sourceString of [official,official.localizations['zh-TW']]){
+      sourceString.params.find(param=>param.name==='movement_speed').resolvedValue='+18.5%';
+      const params=new Map(sourceString.params.map(param=>[param.placeholder,param.resolvedValue]));
+      sourceString.resolvedText=sourceString.segments.map(segment=>segment.kind==='literal'?
+        segment.text:params.get(segment.text)).join('');
+      sourceString.resolvedTextSha256=digest(Buffer.from(sourceString.resolvedText,'utf8'));
+      if(sourceString.origin==='official'){
+        sourceString.text=sourceString.resolvedText;
+        sourceString.sha256=sourceString.resolvedTextSha256;
+      }
+    }
+  });
+  const accepted=await activate(sourceBacked,new MemoryStore(),{allowPendingPreview:true});
+  assert.equal(accepted.result.domains.blessings.records.find(record=>record.kind==='presentation')
+    .payload.tierPresentations.options[1].official.localizations['zh-TW'].resolvedText,
+  '移動速度 +18.5%，持續 2 秒。');
+  assert.equal(accepted.result.domains.blessings.records.find(record=>record.kind==='presentation')
+    .payload.tierPresentations.options[1].detailSections.effects[0].text,
+  'Synthetic tier 2 movement effect at +18.5%.');
+});
+
+test('UnitT73_RejectsInvalidTierBindingsAndKeepsTheCurrentSnapshot',async()=>{
+  // Scenario: Given a verified four-tier R1, then a re-sealed candidate with one tier, locale, claim, or feature defect.
+  // Purpose: Reject incomplete or cross-tier official data atomically without replacing the active snapshot.
+  const store=new MemoryStore();
+  const r1=tieredNativeRelease({dataRevision:'d'.repeat(64),contentVersion:'0.0.73'});
+  await activate(r1,store,{allowPendingPreview:true});
+  const activeRevision=(await store.getActive(GAME_RELEASE_ID)).dataRevision;
+  function resealOfficial(official){
+    for(const sourceString of [official,official.localizations['zh-TW']]){
+      for(const segment of sourceString.segments)
+        segment.sha256=digest(Buffer.from(segment.text,'utf8'));
+      sourceString.sourceText=sourceString.segments.map(segment=>segment.text).join('');
+      sourceString.sourceTextSha256=digest(Buffer.from(sourceString.sourceText,'utf8'));
+      const params=new Map(sourceString.params.map(param=>[param.placeholder,param.resolvedValue]));
+      sourceString.resolvedText=sourceString.segments.map(segment=>segment.kind==='literal'?
+        segment.text:params.get(segment.text)).join('');
+      sourceString.resolvedTextSha256=digest(Buffer.from(sourceString.resolvedText,'utf8'));
+      if(sourceString.origin==='official'){
+        sourceString.text=sourceString.resolvedText;
+        sourceString.sha256=sourceString.resolvedTextSha256;
+      }
+    }
+  }
+  const cases=[
+    {name:'missing tier',expected:/tier presentation options must be tiers 1 through 4 in order/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='presentation').payload.tierPresentations.options.splice(1,1);
+      })},
+    {name:'duplicate tier',expected:/tier presentation options must be tiers 1 through 4 in order/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='presentation').payload.tierPresentations.options[1].tier=1;
+      })},
+    {name:'wrong default',expected:/default tier must be 4/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='presentation').payload.tierPresentations.defaultTier=3;
+      })},
+    {name:'Source defines fewer than four tiers',expected:/must define exactly tiers 1 through 4/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='blessing-variant').payload.definedTiers.pop();
+      })},
+    {name:'Source tier value is unknown',expected:/tier values must define known ratios/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='blessing-variant').payload.tierValues[2].value.status='unknown';
+      })},
+    {name:'unknown tier number',expected:/tier presentation options must be tiers 1 through 4 in order/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='presentation').payload.tierPresentations.options[3].tier=5;
+      })},
+    {name:'wrong tier property',expected:/tier 2 movement claim is invalid/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:tier-2-percent').payload.property=
+          'description.format_values.movement_speed.defined_tier_1_display_percent';
+      })},
+    {name:'wrong variant target',expected:/native numeric binding targets another entity/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:tier-2-percent').payload.targetRef=
+          'fixture:skill:a';
+      })},
+    {name:'ratio and percent disagree',expected:/tier 2 movement claim is invalid or differs from its Source ratio/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.kind==='blessing-variant').payload.tierValues[1].value.decimal='0.19';
+      })},
+    {name:'duration uses another valid numeric property',expected:/tier 1 active duration must use the existing 2-second override claim/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const duration=document.records.find(record=>record.recordId==='fixture:blessing:active-duration');
+        duration.payload.property='description.format_values.time.value';
+        duration.payload.basis='code-derived';
+      })},
+    {name:'English and zh-TW bind different tier claims',expected:/tier 2 English and zh-TW movement bindings differ/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        presentation.payload.tierPresentations.options[1].official.localizations['zh-TW'].params
+          .find(param=>param.name==='movement_speed').bindingRef='fixture:blessing:tier-1-percent';
+      })},
+    {name:'option template differs from tier four',expected:/tier 2 official identity or template differs/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        const official=presentation.payload.tierPresentations.options[1].official;
+        official.segments[0].text='Different movement speed ';
+        resealOfficial(official);
+      })},
+    {name:'detail points at another tier',expected:/tier 2 detail claim is not bound by that option/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        presentation.payload.tierPresentations.options[1].detailSections.effects[0].claimRefs=
+          ['fixture:blessing:tier-1-percent'];
+      })},
+    {name:'root differs from tier four',expected:/tier presentation root detail sections must match tier 4/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        presentation.payload.detailSections.notes=[{itemId:'fixture-mismatched-root',text:'Mismatch.'}];
+      })},
+    {name:'root official differs from tier four',expected:/tier presentation root official must match tier 4/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        const official=presentation.payload.official;
+        const movement=official.localizations['zh-TW'].params.find(param=>param.name==='movement_speed');
+        movement.bindingRef='fixture:blessing:tier-3-percent';
+        movement.resolvedValue='+19%';
+        resealOfficial(official);
+      })},
+    {name:'feature missing',expected:/requires blessing-tier-presentations-v1/i,
+      edit:release=>{release.manifest.compatibility.requiredFeatures=
+        release.manifest.compatibility.requiredFeatures.filter(feature=>feature!=='blessing-tier-presentations-v1');
+        refreshVersion(release);}},
+    {name:'feature advertised without options',expected:/must be present if and only if blessing-tier-presentations-v1 is declared/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        delete document.records.find(record=>record.kind==='presentation').payload.tierPresentations;
+      })},
+    {name:'tier feature without native feature',expected:/requires official-native-localizations-v1/i,
+      edit:release=>{release.manifest.compatibility.requiredFeatures=
+        release.manifest.compatibility.requiredFeatures.filter(feature=>feature!=='official-native-localizations-v1');
+        refreshVersion(release);}}
+  ];
+  for(const [index,{name,expected,edit}] of cases.entries()){
+    const candidate=tieredNativeRelease({dataRevision:(index+1).toString(16).padStart(64,'0'),
+      contentVersion:'0.0.'+String(74+index)});
+    edit(candidate);
+    await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),expected,name);
+    assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,activeRevision,
+      name+' must preserve the previously verified snapshot');
+  }
+});
+
+test('UnitT74_ZeroSignedPercentMatchesTheSharedCompilerFormat',async()=>{
+  // Scenario: Given a fully resealed native tier whose Source ratio and percent claim are both zero.
+  // Purpose: Accept the compiler-compatible 0% spelling while preserving both native locales and tier details.
+  const release=tieredNativeRelease({dataRevision:'f'.repeat(64),contentVersion:'0.0.75'});
+  rewriteDomain(release,'blessings',document=>{
+    document.records.find(record=>record.kind==='blessing-variant').payload.tierValues[3].value.decimal='0';
+    document.records.find(record=>record.recordId==='fixture:blessing:tier-4-percent').payload.value.decimal='0';
+    const presentation=document.records.find(record=>record.kind==='presentation');
+    const option=presentation.payload.tierPresentations.options[3];
+    for(const official of [option.official,option.official.localizations['zh-TW']]){
+      official.params.find(param=>param.name==='movement_speed').resolvedValue='0%';
+      const params=new Map(official.params.map(param=>[param.placeholder,param.resolvedValue]));
+      official.resolvedText=official.segments.map(segment=>segment.kind==='literal'?
+        segment.text:params.get(segment.text)).join('');
+      official.resolvedTextSha256=digest(Buffer.from(official.resolvedText,'utf8'));
+      if(official.sourceLocale==='zh-TW'){
+        official.text=official.resolvedText;
+        official.sha256=official.resolvedTextSha256;
+      }
+    }
+    option.detailSections.effects[0].text='Synthetic tier 4 movement effect at 0%.';
+    presentation.payload.official=JSON.parse(JSON.stringify(option.official));
+    presentation.payload.detailSections=JSON.parse(JSON.stringify(option.detailSections));
+  });
+  const store=new MemoryStore();
+  const {result}=await activate(release,store,{allowPendingPreview:true});
+  const presentation=result.domains.blessings.records.find(record=>record.kind==='presentation');
+  const option=presentation.payload.tierPresentations.options[3];
+  assert.equal(option.official.resolvedText,'Movement speed 0% for 2 seconds.');
+  assert.equal(option.official.localizations['zh-TW'].resolvedText,'移動速度 0%，持續 2 秒。');
+  assert.equal(option.detailSections.effects[0].text,'Synthetic tier 4 movement effect at 0%.');
+  assert.deepEqual(presentation.payload.official,option.official);
+  assert.deepEqual(presentation.payload.detailSections,option.detailSections);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,release.dataRevision);
 });
 
 test('UnitT80_StoredSnapshotCannotRebindOneDomainOutsideItsManifest',async()=>{

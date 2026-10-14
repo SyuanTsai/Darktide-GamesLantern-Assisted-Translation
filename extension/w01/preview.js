@@ -143,12 +143,46 @@
       parent.append(block);
     }
   }
-  function appendBlessingTiers(card,domain,entity){
+  function appendBlessingTiers(card,domain,entity,presentation,localizedTerms){
     const variants=domain.records.filter(record=>record.owner==='source'&&record.kind==='blessing-variant'&&
       record.payload&&record.payload.blessingRef===entity.recordId);
     if(variants.length===0) return;
     const block=node('section',undefined,'tier-summary');
     block.append(node('h4','已定義階級'));
+    const tierPresentations=presentation&&presentation.tierPresentations;
+    if(tierPresentations){
+      const variant=variants.find(record=>record.recordId===tierPresentations.variantRef);
+      const payload=variant&&variant.payload||{};
+      if(payload.obtainableTiers&&payload.obtainableTiers.status==='unknown')
+        block.append(node('p','可取得階級：未知'));
+      const defined=Array.isArray(payload.definedTiers)?payload.definedTiers:[];
+      block.append(node('p','已定義階級：'+defined.map(tier=>'LV'+String(tier)).join('、')));
+      const select=node('select');
+      select.setAttribute('aria-label','祝福階級');
+      for(const option of tierPresentations.options){
+        const item=node('option','LV'+String(option.tier));
+        item.value=String(option.tier);
+        select.append(item);
+      }
+      select.value=String(tierPresentations.defaultTier);
+      const label=node('label','選擇階級','tier-selector-label');
+      label.append(select);
+      block.append(label);
+      const selected=node('div',undefined,'tier-selected-presentation');
+      function renderSelectedTier(tier){
+        const option=tierPresentations.options.find(candidate=>candidate.tier===tier);
+        if(!option) return;
+        clear(selected);
+        selected.append(node('p','目前選取：LV'+String(option.tier),'selected-tier-label'));
+        renderOfficial(selected,option.official);
+        renderDetailSections(selected,option.detailSections,localizedTerms);
+      }
+      renderSelectedTier(tierPresentations.defaultTier);
+      select.addEventListener('change',()=>renderSelectedTier(Number(select.value)));
+      block.append(selected);
+      card.append(block);
+      return;
+    }
     for(const variant of variants){
       const payload=variant.payload||{};
       if(payload.obtainableTiers&&payload.obtainableTiers.status==='unknown')
@@ -187,10 +221,11 @@
         card.append(node('p',config.label,'entity-kind'));
         card.append(node('h3',typeof payload.name==='string'?payload.name:'未提供繁中名稱'));
         card.append(node('span',reviewLabel(presentation),'review-chip'));
-        renderOfficial(card,payload.official);
+        const tieredBlessing=config.domain==='blessings'&&payload.tierPresentations;
+        if(!tieredBlessing) renderOfficial(card,payload.official);
         renderErrata(card,payload.errata);
-        renderDetailSections(card,payload.detailSections,localizedTerms);
-        if(config.domain==='blessings') appendBlessingTiers(card,domain,entity);
+        if(!tieredBlessing) renderDetailSections(card,payload.detailSections,localizedTerms);
+        if(config.domain==='blessings') appendBlessingTiers(card,domain,entity,payload,localizedTerms);
         target.append(card);
         count++;
       }

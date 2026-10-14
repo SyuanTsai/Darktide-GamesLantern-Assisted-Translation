@@ -33,7 +33,9 @@
     term:'source',presentation:'web','term-localization':'web'
   });
   const REVIEW_STATES=new Set(['draft','pending','approved','rejected','stale']);
-  const SUPPORTED_FEATURES=new Set(['official-errata-details-v1','official-native-localizations-v1']);
+  const BLESSING_TIER_FEATURE='blessing-tier-presentations-v1';
+  const SUPPORTED_FEATURES=new Set(['official-errata-details-v1','official-native-localizations-v1',
+    BLESSING_TIER_FEATURE]);
   const EXECUTABLE_KEYS=new Set([
     'js','javascript','wasm','html','htmltemplate','templatehtml',
     'selector','selectorprogram','domselectorprogram','formula','executable',
@@ -232,6 +234,8 @@
       if(!SUPPORTED_FEATURES.has(feature)) fail('unsupported required feature: '+feature);
       featureSet.add(feature);
     }
+    if(featureSet.has(BLESSING_TIER_FEATURE)&&!featureSet.has('official-native-localizations-v1'))
+      fail(BLESSING_TIER_FEATURE+' requires official-native-localizations-v1');
     for(const snapshotRef of compatibility.gameSnapshotRefs){
       if(!isNonEmptyString(snapshotRef)||!sourceIds.has(snapshotRef)) fail('manifest game snapshot reference is invalid');
     }
@@ -301,6 +305,41 @@
   function assertExactKeys(value,keys,label){
     if(!isObject(value)||Object.keys(value).length!==keys.length||Object.keys(value).some(key=>!keys.includes(key)))
       fail(label+' fields are invalid');
+  }
+  function canonicalJson(value){
+    if(Array.isArray(value)) return '['+value.map(canonicalJson).join(',')+']';
+    if(isObject(value)) return '{'+Object.keys(value).sort().map(key=>
+      JSON.stringify(key)+':'+canonicalJson(value[key])).join(',')+'}';
+    return JSON.stringify(value);
+  }
+  function deepEqualJson(left,right){return canonicalJson(left)===canonicalJson(right);}
+  function ratioToPercentDecimal(value){
+    if(typeof value!=='string'||!/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value)) return null;
+    const [whole,fraction='']=value.split('.');
+    const digits=whole+fraction;
+    if(fraction.length<=2) return (digits+'0'.repeat(2-fraction.length)).replace(/^0+(?=\d)/,'');
+    const splitAt=digits.length-(fraction.length-2);
+    let integer=digits.slice(0,splitAt).replace(/^0+(?=\d)/,'')||'0';
+    const decimal=digits.slice(splitAt).replace(/0+$/,'');
+    return decimal?integer+'.'+decimal:integer;
+  }
+  function tierOfficialIdentity(value){
+    const copy=JSON.parse(JSON.stringify(value));
+    function normalize(sourceString){
+      delete sourceString.resolvedText;
+      delete sourceString.resolvedTextSha256;
+      if('text' in sourceString) delete sourceString.text;
+      if('sha256' in sourceString) delete sourceString.sha256;
+      for(const param of sourceString.params){
+        if(param.name==='movement_speed'){
+          param.bindingRef='__tier_movement_claim__';
+          param.resolvedValue='__tier_movement_value__';
+        }
+      }
+    }
+    normalize(copy);
+    normalize(copy.localizations['zh-TW']);
+    return copy;
   }
   async function validateNativeOfficialText(value,webReferences,cryptoApi,{locale,label,hasOrigin=false,hasResolvedDigest=false}={}){
     const webById=new Map(webReferences.map(reference=>[reference.sourceId,reference]));
@@ -375,30 +414,83 @@
       }
     }
   }
-  async function validatePresentation(record,webReferences,cryptoApi,{nativeFeature=false}={}){
+  function validateDetailSections(sections,label){
+    assertExactKeys(sections,['effects','conditions','calculation','notes','extra'],label);
+    for(const section of ['effects','conditions','calculation','notes','extra']){
+      if(!Array.isArray(sections[section])) fail(label+' section is invalid: '+section);
+      for(const item of sections[section]){
+        if(!isObject(item)) fail(label+' item is invalid');
+        const itemKeys=['itemId',...('text' in item?['text']:[]),...('claimRefs' in item?['claimRefs']:[]),...('termRef' in item?['termRef']:[])];
+        assertExactKeys(item,itemKeys,label+' item');
+        if(!isNonEmptyString(item.itemId)||(!isNonEmptyString(item.text)&&!isNonEmptyString(item.termRef)))
+          fail(label+' item is incomplete');
+        if('text' in item&&!isNonEmptyString(item.text)) fail(label+' text is invalid');
+        if('claimRefs' in item&&(!Array.isArray(item.claimRefs)||item.claimRefs.some(ref=>!isNonEmptyString(ref))))
+          fail(label+' claim references are invalid');
+        if('termRef' in item&&!isNonEmptyString(item.termRef)) fail(label+' term reference is invalid');
+      }
+    }
+  }
+  async function validateTierNativeOfficial(official,webReferences,webSourceRefs,cryptoApi,label){
+    const nativeFields=['sourceRef','sourceLocale','resource','sourceHash','key','occurrence','sourceText',
+      'sourceTextSha256','segments','params','resolvedText','resolvedTextSha256','localizations'];
+    assertExactKeys(official,nativeFields,label+' English official text');
+    if(!isNonEmptyString(official.sourceRef)||!webReferences.some(reference=>reference.sourceId===official.sourceRef)||
+      !webSourceRefs.includes(official.sourceRef)||official.sourceLocale!=='en')
+      fail(label+' English official source reference or locale is invalid');
+    assertExactKeys(official.localizations,['zh-TW'],label+' official localizations');
+    const localized=official.localizations['zh-TW'];
+    assertExactKeys(localized,['origin','sourceRef','sourceLocale','resource','sourceHash','key','occurrence',
+      'sourceText','sourceTextSha256','segments','params','resolvedText','resolvedTextSha256','text','sha256'],
+      label+' zh-TW official text');
+    if(localized.origin!=='official'||localized.resource!==official.resource||
+      !webSourceRefs.includes(localized.sourceRef))
+      fail(label+' English and zh-TW official identities do not match their shared presentation');
+    await validateNativeOfficialText(official,webReferences,cryptoApi,{locale:'en',label:label+' English official text'});
+    await validateNativeOfficialText(localized,webReferences,cryptoApi,{locale:'zh-TW',
+      label:label+' zh-TW official text',hasOrigin:true,hasResolvedDigest:true});
+  }
+  async function validateTierPresentations(value,{record,webReferences,cryptoApi}={}){
+    assertExactKeys(value,['variantRef','defaultTier','options'],'tier presentations');
+    if(!isNonEmptyString(value.variantRef)) fail('tier presentations require an explicit variant reference');
+    if(value.defaultTier!==4) fail('tier presentations default tier must be 4');
+    if(!Array.isArray(value.options)||value.options.length!==4||
+      value.options.some((option,index)=>!isObject(option)||option.tier!==index+1))
+      fail('tier presentation options must be tiers 1 through 4 in order');
+    for(const option of value.options){
+      assertExactKeys(option,['tier','official','detailSections'],'tier presentation option');
+      validateDetailSections(option.detailSections,'tier '+option.tier+' detail sections');
+      await validateTierNativeOfficial(option.official,webReferences,record.sourceRefs,cryptoApi,
+        'tier '+option.tier+' presentation');
+    }
+    const tierFour=value.options[3];
+    if(!deepEqualJson(record.payload.official,tierFour.official))
+      fail('tier presentation root official must match tier 4');
+    if(!deepEqualJson(record.payload.detailSections,tierFour.detailSections))
+      fail('tier presentation root detail sections must match tier 4');
+    const expectedIdentity=canonicalJson(tierOfficialIdentity(tierFour.official));
+    for(const option of value.options){
+      if(canonicalJson(tierOfficialIdentity(option.official))!==expectedIdentity)
+        fail('tier '+option.tier+' official identity or template differs from tier 4');
+    }
+  }
+  async function validatePresentation(record,webReferences,cryptoApi,
+    {nativeFeature=false,tierFeature=false,tierAllowed=false}={}){
     const webIds=webReferences instanceof Set?webReferences:new Set(webReferences.map(reference=>reference.sourceId));
     if(!isNonEmptyString(record.entityRef)||record.locale!=='zh-TW') fail('presentation identity or locale is missing');
     const payload=record.payload,payloadKeys=['name','detailSections'];
+    if('tierPresentations' in payload) payloadKeys.push('tierPresentations');
     if('official' in payload) payloadKeys.push('official','errata');
     if(Object.keys(payload).some(key=>!payloadKeys.includes(key))||
       ('official' in payload)!==('errata' in payload)||!isNonEmptyString(payload.name)||
       !isObject(payload.detailSections)) fail('presentation payload is incomplete');
-    assertExactKeys(payload.detailSections,['effects','conditions','calculation','notes','extra'],
-      'presentation detail sections');
-    for(const section of ['effects','conditions','calculation','notes','extra']){
-      if(!Array.isArray(payload.detailSections[section])) fail('presentation detail section is invalid: '+section);
-      for(const item of payload.detailSections[section]){
-        if(!isObject(item)) fail('presentation detail item is invalid');
-        const itemKeys=['itemId',...('text' in item?['text']:[]),...('claimRefs' in item?['claimRefs']:[]),...('termRef' in item?['termRef']:[])];
-        assertExactKeys(item,itemKeys,'presentation detail item');
-        if(!isNonEmptyString(item.itemId)||(!isNonEmptyString(item.text)&&!isNonEmptyString(item.termRef)))
-          fail('presentation detail item is incomplete');
-        if('text' in item&&!isNonEmptyString(item.text)) fail('presentation detail text is invalid');
-        if('claimRefs' in item&&(!Array.isArray(item.claimRefs)||item.claimRefs.some(ref=>!isNonEmptyString(ref))))
-          fail('presentation detail claim references are invalid');
-        if('termRef' in item&&!isNonEmptyString(item.termRef)) fail('presentation detail term reference is invalid');
-      }
-    }
+    validateDetailSections(payload.detailSections,'presentation detail sections');
+    const hasTierPresentations='tierPresentations' in payload;
+    if(hasTierPresentations&&(!tierFeature||!nativeFeature))
+      fail('tier presentation requires blessing-tier-presentations-v1 and official-native-localizations-v1');
+    if(hasTierPresentations&&!tierAllowed) fail('tier presentations are only supported for blessing presentations');
+    if(hasTierPresentations&&!('official' in payload))
+      fail('tier presentations require a root official presentation and errata list');
     if(!('official' in payload)) return;
     const official=payload.official;
     const localizations=official.localizations;
@@ -475,6 +567,8 @@
       if(!segment||erratum.anchor.sourceTextDigest!==segment.sha256)
         fail('presentation erratum anchor does not match an official segment');
     }
+    if(hasTierPresentations)
+      await validateTierPresentations(payload.tierPresentations,{record,webReferences,cryptoApi});
   }
   async function validateDomainDocument(document,{kind,manifest,allowFixture,allowPendingPreview=false,
     packageKind,cryptoApi=globalThis.crypto}){
@@ -506,7 +600,9 @@
       if(manifest.publicationEligible&&record.reviewState!=='approved')
         fail(kind+' domain record is not approved');
       if(record.kind==='presentation') await validatePresentation(record,manifest.web.references,cryptoApi,{
-        nativeFeature:manifest.compatibility.requiredFeatures.includes('official-native-localizations-v1')});
+        nativeFeature:manifest.compatibility.requiredFeatures.includes('official-native-localizations-v1'),
+        tierFeature:manifest.compatibility.requiredFeatures.includes(BLESSING_TIER_FEATURE),
+        tierAllowed:kind==='blessings'});
       if(record.kind==='term-localization'&&(!isNonEmptyString(record.entityRef)||record.locale!=='zh-TW'||
         !isNonEmptyString(record.payload.label)||!isNonEmptyString(record.payload.definition)||
         Object.keys(record.payload).some(key=>!['label','definition'].includes(key)))) fail('term localization is incomplete');
@@ -533,6 +629,8 @@
       }
     }
     const nativeFeature=manifest.compatibility.requiredFeatures.includes('official-native-localizations-v1');
+    const tierFeature=manifest.compatibility.requiredFeatures.includes(BLESSING_TIER_FEATURE);
+    let hasTierPresentations=false;
     function checkRecordReferences(value,path,ownerIds){
       if(Array.isArray(value)){for(let i=0;i<value.length;i++) checkRecordReferences(value[i],path+'['+i+']',ownerIds);return;}
       if(!isObject(value)) return;
@@ -545,7 +643,7 @@
           if(typeof child!=='string'||!ownerIds.has(child)) fail('unknown owner-scoped source reference at '+path+'.'+key);
         }else if(lower==='bindingref'){
           const bindingPath=(path+'.'+key).toLowerCase();
-          if(!nativeFeature||!/^record:.*\.official(?:\.localizations\.zh-tw)?\.params\[\d+\]\.bindingref$/.test(bindingPath))
+          if(!nativeFeature||!/^record:.*\.(?:official(?:\.localizations\.zh-tw)?|tierpresentations\.options\[\d+\]\.official(?:\.localizations\.zh-tw)?)\.params\[\d+\]\.bindingref$/.test(bindingPath))
             fail('unexpected binding reference at '+path+'.'+key);
         }else if(lower.endsWith('refs')){
           if(!Array.isArray(child)||child.some(ref=>typeof ref!=='string'||!records.has(ref)))
@@ -561,6 +659,48 @@
       if(!target||!kinds.includes(target.kind)) fail(label+' references an unknown or incompatible record');
       return target;
     }
+    function validateNativeParam(record,entity,param,locale,label){
+      if(param.format==='plain-number'||param.format==='signed-percent'){
+        const claim=requireKind(param.bindingRef,['claim'],'native numeric binding');
+        if(claim.owner!=='source') fail('native numeric binding must resolve to a Source claim');
+        const value=claim.payload.value;
+        if(!isObject(value)||value.status!=='known'||typeof value.decimal!=='string'||
+          !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value.decimal)||!isNonEmptyString(value.unit))
+          fail('native numeric binding is not a known decimal Source claim');
+        const targetRef=claim.payload.targetRef;
+        let targetMatches=targetRef===record.entityRef;
+        if(entity.kind==='blessing'&&!targetMatches&&Array.isArray(entity.payload.variantRefs)&&
+          entity.payload.variantRefs.includes(targetRef)){
+          const variant=records.get(targetRef);
+          targetMatches=Boolean(variant&&variant.kind==='blessing-variant'&&
+            variant.owner==='source'&&variant.payload.blessingRef===entity.recordId);
+        }
+        if(!targetMatches) fail('native numeric binding targets another entity');
+        const propertyPrefix='description.format_values.'+param.name+'.';
+        const descriptionFormatClaim=claim.payload.basis==='code-derived'&&
+          typeof claim.payload.property==='string'&&claim.payload.property.startsWith(propertyPrefix);
+        const exactActiveDuration=param.format==='plain-number'&&param.name==='time'&&
+          claim.payload.basis==='code-observed'&&
+          claim.payload.property==='template.buff_override.active_duration'&&value.unit==='s';
+        if(!descriptionFormatClaim&&!exactActiveDuration)
+          fail('native numeric binding must use a code-derived description format value or the exact active-duration override');
+        if(param.format==='plain-number'){
+          if(value.unit==='percent'||param.resolvedValue!==value.decimal)
+            fail('native plain-number binding does not match its Source decimal');
+        }else{
+          const sign=value.decimal==='0'?'':'+';
+          const expectedPercent=sign+value.decimal+'%';
+          if(value.unit!=='percent'||param.resolvedValue!==expectedPercent)
+            fail('native signed-percent binding does not match a Source percent claim');
+        }
+      }else if(param.format==='official-name'){
+        const reference=manifest.web.references.find(item=>item.sourceId===param.bindingRef);
+        if(!reference||!record.sourceRefs.includes(param.bindingRef)||
+          !isObject(reference.officialName)||reference.officialName.sourceLocale!==locale||
+          param.resolvedValue!==reference.officialName.text)
+          fail('native official-name binding is not a same-locale Web reference');
+      }
+    }
     for(const record of records.values()){
       const ownerIds=record.owner==='source'?sourceIds:webIds;
       if(!Array.isArray(record.sourceRefs)||record.sourceRefs.some(ref=>!ownerIds.has(ref)))
@@ -569,7 +709,79 @@
       if(record.kind==='evidence'&&(!isNonEmptyString(record.payload.sourceRef)||!sourceIds.has(record.payload.sourceRef)))
         fail('Source evidence has an unknown source reference: '+record.recordId);
       if(record.kind==='presentation'){
-        requireKind(record.entityRef,['skill','blessing','weapon'],'presentation entityRef');
+        const entity=requireKind(record.entityRef,['skill','blessing','weapon'],'presentation entityRef');
+        const tierPresentation=record.payload.tierPresentations;
+        if(tierPresentation!==undefined){
+          hasTierPresentations=true;
+          if(!tierFeature||!nativeFeature)
+            fail('tier presentation requires blessing-tier-presentations-v1 and official-native-localizations-v1');
+          if(entity.kind!=='blessing') fail('tier presentations are only supported for blessing presentations');
+          if(!Array.isArray(entity.payload.variantRefs)||!entity.payload.variantRefs.includes(tierPresentation.variantRef))
+            fail('tier presentations require an explicitly selected blessing variant');
+          const variant=requireKind(tierPresentation.variantRef,['blessing-variant'],'tier presentation variantRef');
+          if(variant.owner!=='source'||variant.payload.blessingRef!==entity.recordId)
+            fail('tier presentation variant does not belong to its blessing');
+          const definedTiers=variant.payload.definedTiers;
+          if(!Array.isArray(definedTiers)||definedTiers.length!==4||
+            definedTiers.some((tier,index)=>tier!==index+1))
+            fail('Source blessing variant must define exactly tiers 1 through 4');
+          const tierValues=variant.payload.tierValues;
+          if(!Array.isArray(tierValues)||tierValues.length!==4||
+            tierValues.some((row,index)=>!isObject(row)||row.tier!==index+1||!isObject(row.value)||
+              row.value.status!=='known'||row.value.unit!=='ratio'||
+              ratioToPercentDecimal(row.value.decimal)===null))
+            fail('Source blessing variant tier values must define known ratios for tiers 1 through 4');
+          let sharedTimeClaimRef=null;
+          for(const option of tierPresentation.options){
+            const optionNumber=option.tier;
+            const english=option.official;
+            const localized=english.localizations['zh-TW'];
+            const movementEn=english.params.find(param=>param.name==='movement_speed');
+            const movementZh=localized.params.find(param=>param.name==='movement_speed');
+            const timeEn=english.params.find(param=>param.name==='time');
+            const timeZh=localized.params.find(param=>param.name==='time');
+            if(!movementEn||!movementZh||movementEn.format!=='signed-percent'||movementZh.format!=='signed-percent'||
+              movementEn.bindingRef!==movementZh.bindingRef)
+              fail('tier '+optionNumber+' English and zh-TW movement bindings differ');
+            if(!timeEn||!timeZh||timeEn.format!=='plain-number'||timeZh.format!=='plain-number'||
+              timeEn.bindingRef!==timeZh.bindingRef||timeEn.resolvedValue!=='2'||timeZh.resolvedValue!=='2')
+              fail('tier '+optionNumber+' active duration must retain the shared 2-second Source claim');
+            if(sharedTimeClaimRef!==null&&timeEn.bindingRef!==sharedTimeClaimRef)
+              fail('tier presentations must retain one shared active-duration claim');
+            sharedTimeClaimRef=timeEn.bindingRef;
+            const durationClaim=requireKind(timeEn.bindingRef,['claim'],'tier '+optionNumber+' active-duration claim');
+            const durationValue=durationClaim.payload.value;
+            if(durationClaim.owner!=='source'||durationClaim.payload.targetRef!==tierPresentation.variantRef||
+              durationClaim.payload.property!=='template.buff_override.active_duration'||
+              durationClaim.payload.basis!=='code-observed'||!deepEqualJson(durationClaim.payload.context,{})||
+              !isObject(durationValue)||durationValue.status!=='known'||durationValue.decimal!=='2'||
+              durationValue.unit!=='s')
+              fail('tier '+optionNumber+' active duration must use the existing 2-second override claim');
+            validateNativeParam(record,entity,movementEn,'en','tier '+optionNumber+' English movement');
+            validateNativeParam(record,entity,movementZh,'zh-TW','tier '+optionNumber+' zh-TW movement');
+            validateNativeParam(record,entity,timeEn,'en','tier '+optionNumber+' English duration');
+            validateNativeParam(record,entity,timeZh,'zh-TW','tier '+optionNumber+' zh-TW duration');
+            const ratio=tierValues[optionNumber-1].value.decimal;
+            const expectedPercent=ratioToPercentDecimal(ratio);
+            const claim=requireKind(movementEn.bindingRef,['claim'],'tier '+optionNumber+' movement claim');
+            if(claim.owner!=='source'||claim.payload.targetRef!==tierPresentation.variantRef||
+              claim.payload.property!=='description.format_values.movement_speed.defined_tier_'+optionNumber+'_display_percent'||
+              claim.payload.basis!=='code-derived'||!deepEqualJson(claim.payload.context,{})||
+              !isObject(claim.payload.value)||claim.payload.value.status!=='known'||
+              claim.payload.value.unit!=='percent'||claim.payload.value.decimal!==expectedPercent)
+              fail('tier '+optionNumber+' movement claim is invalid or differs from its Source ratio');
+            for(const section of Object.values(option.detailSections)){
+              for(const item of section){
+                for(const reference of item.claimRefs||[]){
+                  requireKind(reference,['claim'],'tier '+optionNumber+' detail claimRef');
+                  if(reference!==movementEn.bindingRef&&reference!==timeEn.bindingRef)
+                    fail('tier '+optionNumber+' detail claim is not bound by that option');
+                }
+                if(item.termRef) requireKind(item.termRef,['term'],'tier '+optionNumber+' detail termRef');
+              }
+            }
+          }
+        }
         if(record.payload.official){
           if(!webIds.has(record.payload.official.sourceRef)||!record.sourceRefs.includes(record.payload.official.sourceRef))
             fail('presentation official sourceRef is not owned by Web');
@@ -584,47 +796,8 @@
               {value:localized,locale:'zh-TW'}
             ];
             for(const {value:officialString,locale} of nativeStrings){
-              for(const param of officialString.params){
-                if(param.format==='plain-number'||param.format==='signed-percent'){
-                  const claim=requireKind(param.bindingRef,['claim'],'native numeric binding');
-                  if(claim.owner!=='source') fail('native numeric binding must resolve to a Source claim');
-                  const value=claim.payload.value;
-                  if(!isObject(value)||value.status!=='known'||typeof value.decimal!=='string'||
-                    !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value.decimal)||!isNonEmptyString(value.unit))
-                    fail('native numeric binding is not a known decimal Source claim');
-                  const entity=requireKind(record.entityRef,['skill','blessing','weapon'],'native presentation entity');
-                  const targetRef=claim.payload.targetRef;
-                  let targetMatches=targetRef===record.entityRef;
-                  if(entity.kind==='blessing'&&!targetMatches&&Array.isArray(entity.payload.variantRefs)&&
-                    entity.payload.variantRefs.includes(targetRef)){
-                    const variant=records.get(targetRef);
-                    targetMatches=Boolean(variant&&variant.kind==='blessing-variant'&&
-                      variant.owner==='source'&&variant.payload.blessingRef===entity.recordId);
-                  }
-                  if(!targetMatches) fail('native numeric binding targets another entity');
-                  const propertyPrefix='description.format_values.'+param.name+'.';
-                  const descriptionFormatClaim=claim.payload.basis==='code-derived'&&
-                    typeof claim.payload.property==='string'&&claim.payload.property.startsWith(propertyPrefix);
-                  const exactActiveDuration=param.format==='plain-number'&&param.name==='time'&&
-                    claim.payload.basis==='code-observed'&&
-                    claim.payload.property==='template.buff_override.active_duration'&&value.unit==='s';
-                  if(!descriptionFormatClaim&&!exactActiveDuration)
-                    fail('native numeric binding must use a code-derived description format value or the exact active-duration override');
-                  if(param.format==='plain-number'){
-                    if(value.unit==='percent'||param.resolvedValue!==value.decimal)
-                      fail('native plain-number binding does not match its Source decimal');
-                  }else{
-                    if(value.unit!=='percent'||param.resolvedValue!=='+'+value.decimal+'%')
-                      fail('native signed-percent binding does not match a Source percent claim');
-                  }
-                }else if(param.format==='official-name'){
-                  const reference=manifest.web.references.find(item=>item.sourceId===param.bindingRef);
-                  if(!reference||!record.sourceRefs.includes(param.bindingRef)||
-                    !isObject(reference.officialName)||reference.officialName.sourceLocale!==locale||
-                    param.resolvedValue!==reference.officialName.text)
-                    fail('native official-name binding is not a same-locale Web reference');
-                }
-              }
+              for(const param of officialString.params)
+                validateNativeParam(record,entity,param,locale,'presentation official parameter');
             }
           }
           for(const erratum of record.payload.errata){
@@ -641,6 +814,8 @@
       }
       if(record.kind==='term-localization') requireKind(record.entityRef,['term'],'term localization entityRef');
     }
+    if(tierFeature!==hasTierPresentations)
+      fail('tier presentations must be present if and only if blessing-tier-presentations-v1 is declared');
     const requiredTypes={skills:['skill'],blessings:['blessing','blessing-variant'],weapons:['weapon'],terms:['term']};
     for(const [domain,kinds] of Object.entries(requiredTypes)){
       for(const kind of kinds){

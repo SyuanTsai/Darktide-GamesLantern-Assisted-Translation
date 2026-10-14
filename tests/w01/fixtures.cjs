@@ -140,6 +140,101 @@ function rewriteDomain(release,kind,edit) {
   file.sizeBytes=bytes.length;file.sha256=digest(bytes);
   refreshVersion(release);
 }
+function tieredNativeRelease({dataRevision='c'.repeat(64),contentVersion='0.0.3'}={}){
+  const {nativeRelease}=require('./native-fixtures.cjs');
+  const release=nativeRelease({format:'signed-percent',dataRevision,contentVersion});
+  const percentByTier={1:'17',2:'18',3:'19',4:'20'};
+  const ratioByTier={1:'0.17',2:'0.18',3:'0.19',4:'0.2'};
+  const claimIdByTier=tier=>'fixture:blessing:tier-'+String(tier)+'-percent';
+  const timeClaimId='fixture:blessing:active-duration';
+  const variantRef='fixture:variant:a';
+  const zhSourceRef='fixture-web-source-zh';
+  const enSourceRef='fixture-web-source-en';
+  function officialLocale(locale,tier){
+    const isEnglish=locale==='en';
+    const sourceText=isEnglish?
+      'Movement speed {movement_speed:%s} for {time:%s} seconds.':
+      '移動速度 {movement_speed:%s}，持續 {time:%s} 秒。';
+    const parts=isEnglish?[
+      ['before','literal','Movement speed '],['movement-speed','template-placeholder','{movement_speed:%s}'],
+      ['middle','literal',' for '],['active-duration','template-placeholder','{time:%s}'],
+      ['after','literal',' seconds.']
+    ]:[
+      ['before','literal','移動速度 '],['movement-speed','template-placeholder','{movement_speed:%s}'],
+      ['middle','literal','，持續 '],['active-duration','template-placeholder','{time:%s}'],
+      ['after','literal',' 秒。']
+    ];
+    const segments=parts.map(([segmentId,kind,text])=>({segmentId,kind,text,
+      sha256:digest(Buffer.from(text,'utf8'))}));
+    const params=[
+      {name:'movement_speed',placeholder:'{movement_speed:%s}',status:'bound',
+        bindingRef:claimIdByTier(tier),format:'signed-percent',resolvedValue:'+'+percentByTier[tier]+'%'},
+      {name:'time',placeholder:'{time:%s}',status:'bound',bindingRef:timeClaimId,
+        format:'plain-number',resolvedValue:'2'}
+    ];
+    const paramsByPlaceholder=new Map(params.map(param=>[param.placeholder,param]));
+    const resolvedText=segments.map(segment=>segment.kind==='literal'?segment.text:
+      paramsByPlaceholder.get(segment.text).resolvedValue).join('');
+    const source= {
+      sourceRef:isEnglish?enSourceRef:zhSourceRef,
+      sourceLocale:locale,
+      resource:'fixture/blessings',
+      sourceHash:isEnglish?'a1b2c3d4':'b1b2c3d4',
+      key:null,
+      occurrence:1,
+      sourceText,
+      sourceTextSha256:digest(Buffer.from(sourceText,'utf8')),
+      segments,
+      params,
+      resolvedText,
+      resolvedTextSha256:digest(Buffer.from(resolvedText,'utf8'))
+    };
+    if(isEnglish) return source;
+    return {origin:'official',...source,text:resolvedText,sha256:source.resolvedTextSha256};
+  }
+  function officialPair(tier){
+    return { ...officialLocale('en',tier),
+      localizations:{'zh-TW':officialLocale('zh-TW',tier)} };
+  }
+  function tierDetails(tier){
+    return {effects:[{itemId:'fixture-tier-effect-'+tier,
+        text:'Synthetic tier '+tier+' movement effect at +'+percentByTier[tier]+'%.',
+        claimRefs:[claimIdByTier(tier)]}],
+      conditions:[],
+      calculation:[{itemId:'fixture-tier-duration-'+tier,
+        text:'Synthetic active duration 2 seconds.',claimRefs:[timeClaimId]}],
+      notes:[],extra:[]};
+  }
+  const options=[1,2,3,4].map(tier=>({tier,official:officialPair(tier),detailSections:tierDetails(tier)}));
+  rewriteDomain(release,'blessings',document=>{
+    const variant=document.records.find(item=>item.recordId===variantRef);
+    variant.payload.definedTiers=[1,2,3,4];
+    variant.payload.tierValues=[1,2,3,4].map(tier=>({tier,value:{status:'known',
+      decimal:ratioByTier[tier],unit:'ratio'}}));
+    document.records.push(...[1,2,3,4].map(tier=>record(claimIdByTier(tier),'claim','source',{
+      targetRef:variantRef,
+      property:'description.format_values.movement_speed.defined_tier_'+tier+'_display_percent',
+      value:{status:'known',decimal:percentByTier[tier],unit:'percent'},context:{},basis:'code-derived',
+      evidenceRefs:['fixture:evidence:a']
+    })));
+    document.records.push(record(timeClaimId,'claim','source',{
+      targetRef:variantRef,property:'template.buff_override.active_duration',
+      value:{status:'known',decimal:'2',unit:'s'},context:{},basis:'code-observed',
+      evidenceRefs:['fixture:evidence:a']
+    }));
+    const presentation=document.records.find(item=>item.kind==='presentation'&&
+      item.entityRef==='fixture:blessing:a');
+    presentation.sourceRefs=[enSourceRef,zhSourceRef];
+    presentation.payload.official=JSON.parse(JSON.stringify(options[3].official));
+    presentation.payload.errata=[];
+    presentation.payload.detailSections=JSON.parse(JSON.stringify(options[3].detailSections));
+    presentation.payload.tierPresentations={variantRef,defaultTier:4,options};
+  });
+  release.manifest.files.find(file=>file.kind==='blessings').dependencies=['skills','weapons'];
+  release.manifest.compatibility.requiredFeatures.push('blessing-tier-presentations-v1');
+  refreshVersion(release);
+  return release;
+}
 class MemoryStore {
   constructor(){this.active=new Map();this.snapshots=new Map();this.failCommit=false;}
   key(gameReleaseId,dataRevision){return gameReleaseId+'|'+dataRevision;}
@@ -161,4 +256,5 @@ async function activate(release,store=new MemoryStore(),options={}) {
     gameReleaseId:GAME_RELEASE_ID,allowFixture:true,...options});
   return {result,store};
 }
-module.exports={GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,DEPENDENCIES,digest,json,response,record,presentation,createRelease,refreshVersion,rewriteDomain,MemoryStore,activate};
+module.exports={GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,DEPENDENCIES,digest,json,response,record,presentation,
+  createRelease,refreshVersion,rewriteDomain,tieredNativeRelease,MemoryStore,activate};

@@ -7,7 +7,7 @@ const path=require('node:path');
 const {buildDevExtension}=require('../../scripts/w01/build-dev-extension.cjs');
 const {
   GAME_VERSION,GAME_RELEASE_ID,DATA_R1,DATA_R2,
-  createRelease,rewriteDomain
+  createRelease,rewriteDomain,tieredNativeRelease
 }=require('./fixtures.cjs');
 const {nativeRelease}=require('./native-fixtures.cjs');
 const {loadPlaywright}=require('./playwright-runtime.cjs');
@@ -279,6 +279,87 @@ test('InterT12_RendersNativeOfficialZhTwAndPendingCompatibilityNotice',async t=>
     if(error.message.includes('spawn UNKNOWN')){
       t.diagnostic('Bundled Chromium could not start: '+error.message);
       t.skip('Loaded-extension native renderer test unavailable because Chromium failed to start.');
+      return;
+    }
+    throw error;
+  }finally{
+    if(context) await context.close();
+  }
+});
+
+// Scenario: Given a validated four-tier native blessing presentation in extension-origin IndexedDB.
+// Purpose: Keep official text and authored effect details synchronized while selecting LV4, LV1, LV2, LV3, and LV4.
+test('InterT14_BlessingTierSelectorKeepsOfficialTextAndDetailsOnTheSameTier',async t=>{
+  const {playwright,version:playwrightVersion}=loadPlaywright();
+  const built=buildDevExtension({includeTestHarness:true});
+  const profilePath=path.join(built.outputRoot,'profile');
+  const screenshot=path.join(built.outputRoot,'preview-blessing-tier-selector.png');
+  const candidate=tieredNativeRelease({dataRevision:'7'.repeat(64),contentVersion:'0.0.74'});
+  let context;
+  const pageErrors=[];
+  const consoleErrors=[];
+  try{
+    context=await playwright.chromium.launchPersistentContext(profilePath,{
+      channel:'chromium',executablePath:process.env.SYP_W01_CHROMIUM_EXE||undefined,
+      headless:true,viewport:{width:1180,height:1000},ignoreDefaultArgs:['--disable-extensions'],
+      args:['--disable-extensions-except='+built.extensionPath,'--load-extension='+built.extensionPath]
+    });
+    let worker=context.serviceWorkers().find(item=>item.url().endsWith('/service-worker.js'));
+    if(!worker) worker=await context.waitForEvent('serviceworker',{timeout:15000});
+    const extensionId=new URL(worker.url()).host;
+    const page=await context.newPage();
+    page.on('pageerror',error=>pageErrors.push(error.message));
+    page.on('console',message=>{if(message.type()==='error') consoleErrors.push(message.text());});
+    await page.goto('chrome-extension://'+extensionId+'/idb-harness.html');
+    await page.waitForFunction(()=>typeof window.activateW01PendingPreview==='function');
+    const active=await page.evaluate(input=>window.activateW01PendingPreview(input),{
+      gameVersion:GAME_VERSION,gameReleaseId:GAME_RELEASE_ID,routes:serializeRoutes(candidate)
+    });
+    assert.equal(active.dataRevision,candidate.dataRevision);
+    await page.goto('chrome-extension://'+extensionId+'/preview.html');
+    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
+      document.querySelector('#content-cards .tier-selected-presentation'));
+    const card=page.locator('#content-cards .entity-card').filter({hasText:'示意祝福'}).first();
+    const selector=card.locator('select[aria-label="祝福階級"]');
+    assert.equal(await selector.locator('option').count(),4);
+    assert.deepEqual(await selector.locator('option').allTextContents(),['LV1','LV2','LV3','LV4']);
+    assert.equal(await selector.inputValue(),'4');
+    assert.ok((await card.textContent()).includes('可取得階級：未知'));
+    assert.equal(await card.locator('.tier-selected-presentation .detail-section').count(),5);
+    assert.equal(await card.locator('.official-copy').count(),1,
+      'the tiered blessing renders one selected official presentation at a time');
+
+    const expected=[
+      {tier:4,percent:'+20%',effect:'Synthetic tier 4 movement effect at +20%.'},
+      {tier:1,percent:'+17%',effect:'Synthetic tier 1 movement effect at +17%.'},
+      {tier:2,percent:'+18%',effect:'Synthetic tier 2 movement effect at +18%.'},
+      {tier:3,percent:'+19%',effect:'Synthetic tier 3 movement effect at +19%.'},
+      {tier:4,percent:'+20%',effect:'Synthetic tier 4 movement effect at +20%.'}
+    ];
+    for(const step of expected){
+      await selector.selectOption(String(step.tier));
+      const selected=card.locator('.tier-selected-presentation');
+      const text=await selected.textContent();
+      assert.ok(text.includes('目前選取：LV'+String(step.tier)));
+      assert.ok(text.includes(step.percent));
+      assert.ok(text.includes(step.effect));
+      assert.ok(text.includes('Synthetic active duration 2 seconds.'));
+      assert.ok(text.includes('持續 2 秒。'));
+    }
+    assert.equal(await card.locator('.tier-selected-presentation .detail-section').count(),5);
+    assert.deepEqual(pageErrors,[]);
+    assert.deepEqual(consoleErrors,[]);
+    await page.screenshot({path:screenshot,fullPage:true});
+    t.diagnostic(JSON.stringify({devBuild:'unpacked MV3 extension; private persistent profile',
+      packageKind:candidate.version.package_kind,dataRevision:candidate.dataRevision,
+      playwrightVersion,projectDeclaredPlaywright:'1.62.1',chromeVersion:context.browser().version(),
+      selectorOptions:['LV1','LV2','LV3','LV4'],defaultTier:4,sequence:[4,1,2,3,4],
+      officialTextAndDetailsStaySynchronized:true,obtainableTiersRemainUnknown:true,
+      fiveDetailSectionsVisible:true,consoleErrors,pageErrors,screenshot},null,2));
+  }catch(error){
+    if(error.message.includes('spawn UNKNOWN')){
+      t.diagnostic('Bundled Chromium could not start: '+error.message);
+      t.skip('Loaded-extension tier selector test unavailable because Chromium failed to start.');
       return;
     }
     throw error;
