@@ -620,11 +620,38 @@ test('UnitT73_RejectsInvalidTierBindingsAndKeepsTheCurrentSnapshot',async()=>{
       edit:release=>rewriteDomain(release,'blessings',document=>{
         document.records.find(record=>record.kind==='blessing-variant').payload.tierValues[1].value.decimal='0.19';
       })},
-    {name:'duration uses another valid numeric property',expected:/tier 1 active duration must use the existing 2-second override claim/i,
+    {name:'duration uses another valid numeric property',expected:/tier 1 active duration must use the shared Source active-duration override claim/i,
       edit:release=>rewriteDomain(release,'blessings',document=>{
         const duration=document.records.find(record=>record.recordId==='fixture:blessing:active-duration');
         duration.payload.property='description.format_values.time.value';
         duration.payload.basis='code-derived';
+      })},
+    {name:'duration claim has the wrong unit',expected:/tier 1 active duration must use the shared Source active-duration override claim/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:active-duration').payload.value.unit='ms';
+      })},
+    {name:'duration claim has the wrong owner',expected:/domain record owner is invalid/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:active-duration').owner='web';
+      })},
+    {name:'duration claim targets another entity',expected:/tier 1 active duration must use the shared Source active-duration override claim/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:active-duration').payload.targetRef='fixture:skill:a';
+      })},
+    {name:'duration claim has an unexpected context',expected:/tier 1 active duration must use the shared Source active-duration override claim/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        document.records.find(record=>record.recordId==='fixture:blessing:active-duration').payload.context={tier:1};
+      })},
+    {name:'tiers bind different valid duration claims',expected:/tier 2 official identity or template differs from tier 4|tier presentations must retain one shared active-duration claim/i,
+      edit:release=>rewriteDomain(release,'blessings',document=>{
+        const duration=document.records.find(record=>record.recordId==='fixture:blessing:active-duration');
+        const alternate=JSON.parse(JSON.stringify(duration));
+        alternate.recordId='fixture:blessing:active-duration-alternate';
+        document.records.push(alternate);
+        const presentation=document.records.find(record=>record.kind==='presentation');
+        const option=presentation.payload.tierPresentations.options[1];
+        for(const official of [option.official,option.official.localizations['zh-TW']])
+          official.params.find(param=>param.name==='time').bindingRef=alternate.recordId;
       })},
     {name:'English and zh-TW bind different tier claims',expected:/tier 2 English and zh-TW movement bindings differ/i,
       edit:release=>rewriteDomain(release,'blessings',document=>{
@@ -715,6 +742,49 @@ test('UnitT74_ZeroSignedPercentMatchesTheSharedCompilerFormat',async()=>{
   assert.equal(option.detailSections.effects[0].text,'Synthetic tier 4 movement effect at 0%.');
   assert.deepEqual(presentation.payload.official,option.official);
   assert.deepEqual(presentation.payload.detailSections,option.detailSections);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,release.dataRevision);
+});
+
+test('UnitT75_TierDurationsUseTheSharedSourceValue',async()=>{
+  // Scenario: Given four valid tier options bound to one Source active-duration claim of three seconds.
+  // Purpose: Ensure the package validator follows the Source-owned duration instead of hardcoding two seconds.
+  const release=tieredNativeRelease({dataRevision:'9'.repeat(64),contentVersion:'0.0.76'});
+  rewriteDomain(release,'blessings',document=>{
+    document.records.find(record=>record.recordId==='fixture:blessing:active-duration')
+      .payload.value.decimal='3';
+    const presentation=document.records.find(record=>record.kind==='presentation');
+    const options=presentation.payload.tierPresentations.options;
+    for(const option of options){
+      for(const official of [option.official,option.official.localizations['zh-TW']]){
+        official.params.find(param=>param.name==='time').resolvedValue='3';
+        const params=new Map(official.params.map(param=>[param.placeholder,param.resolvedValue]));
+        official.resolvedText=official.segments.map(segment=>segment.kind==='literal'?
+          segment.text:params.get(segment.text)).join('');
+        official.resolvedTextSha256=digest(Buffer.from(official.resolvedText,'utf8'));
+        if(official.origin==='official'){
+          official.text=official.resolvedText;
+          official.sha256=official.resolvedTextSha256;
+        }
+      }
+      option.detailSections.calculation[0].text='Synthetic active duration 3 seconds.';
+    }
+    presentation.payload.official=JSON.parse(JSON.stringify(options[3].official));
+    presentation.payload.detailSections=JSON.parse(JSON.stringify(options[3].detailSections));
+  });
+  const store=new MemoryStore();
+  const {result}=await activate(release,store,{allowPendingPreview:true});
+  const presentation=result.domains.blessings.records.find(record=>record.kind==='presentation');
+  const options=presentation.payload.tierPresentations.options;
+  for(const option of options){
+    assert.equal(option.official.params.find(param=>param.name==='time').resolvedValue,'3');
+    assert.equal(option.official.localizations['zh-TW'].params.find(param=>param.name==='time').resolvedValue,'3');
+    assert.equal(option.official.resolvedText,'Movement speed +'+(16+option.tier)+'% for 3 seconds.');
+    assert.equal(option.official.localizations['zh-TW'].resolvedText,
+      '移動速度 +'+(16+option.tier)+'%，持續 3 秒。');
+    assert.equal(option.detailSections.calculation[0].text,'Synthetic active duration 3 seconds.');
+  }
+  assert.deepEqual(presentation.payload.official,options[3].official);
+  assert.deepEqual(presentation.payload.detailSections,options[3].detailSections);
   assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,release.dataRevision);
 });
 

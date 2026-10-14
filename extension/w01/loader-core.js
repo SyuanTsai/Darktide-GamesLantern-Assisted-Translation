@@ -744,8 +744,8 @@
               movementEn.bindingRef!==movementZh.bindingRef)
               fail('tier '+optionNumber+' English and zh-TW movement bindings differ');
             if(!timeEn||!timeZh||timeEn.format!=='plain-number'||timeZh.format!=='plain-number'||
-              timeEn.bindingRef!==timeZh.bindingRef||timeEn.resolvedValue!=='2'||timeZh.resolvedValue!=='2')
-              fail('tier '+optionNumber+' active duration must retain the shared 2-second Source claim');
+              timeEn.bindingRef!==timeZh.bindingRef)
+              fail('tier '+optionNumber+' English and zh-TW duration bindings differ');
             if(sharedTimeClaimRef!==null&&timeEn.bindingRef!==sharedTimeClaimRef)
               fail('tier presentations must retain one shared active-duration claim');
             sharedTimeClaimRef=timeEn.bindingRef;
@@ -754,9 +754,8 @@
             if(durationClaim.owner!=='source'||durationClaim.payload.targetRef!==tierPresentation.variantRef||
               durationClaim.payload.property!=='template.buff_override.active_duration'||
               durationClaim.payload.basis!=='code-observed'||!deepEqualJson(durationClaim.payload.context,{})||
-              !isObject(durationValue)||durationValue.status!=='known'||durationValue.decimal!=='2'||
-              durationValue.unit!=='s')
-              fail('tier '+optionNumber+' active duration must use the existing 2-second override claim');
+              !isObject(durationValue)||durationValue.status!=='known'||durationValue.unit!=='s')
+              fail('tier '+optionNumber+' active duration must use the shared Source active-duration override claim');
             validateNativeParam(record,entity,movementEn,'en','tier '+optionNumber+' English movement');
             validateNativeParam(record,entity,movementZh,'zh-TW','tier '+optionNumber+' zh-TW movement');
             validateNativeParam(record,entity,timeEn,'en','tier '+optionNumber+' English duration');
