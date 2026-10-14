@@ -7,6 +7,12 @@
 
   const DEV_ORIGIN='https://darktide-zh-tw-preview.syuan-tsai.workers.dev';
   const PUBLIC_SOURCE_REPOSITORY='https://github.com/Aussiemon/Darktide-Source-Code';
+  const MODS_ANALYSIS_REFERENCE=Object.freeze({
+    sourceId:'legacy:mods:psyker:brain-burst-improved:analysis-en',
+    repository:'https://github.com/SyuanTsai/Warhammer-40-000-DARKTIDE-Mods',
+    commit:'241ad76ce62330472aa423055a5b85db59bb6c0d',
+    path:'Game Info/releases/1.13.X/skills/talents/Psyker/en/psyker_brain_burst_improved.md'
+  });
   const SOURCE_LOCATOR_KEYS=Object.freeze(['repository','commit','path','snapshot']);
   const REQUIRED_KINDS=Object.freeze(['skills','blessings','weapons','terms']);
   const ALL_KINDS=Object.freeze(['skills','blessings','weapons','terms','game-changes']);
@@ -135,6 +141,16 @@
         fail('Web reference metadata may not contain Source-owned repository locators');
       if(label==='source'&&Object.prototype.hasOwnProperty.call(reference,'officialName'))
         fail('official-name metadata is restricted to the Web reference registry');
+      if(reference.sourceId===MODS_ANALYSIS_REFERENCE.sourceId){
+        const exactModsAnalysis=label==='source'&&
+          SOURCE_LOCATOR_KEYS.every(key=>Object.prototype.hasOwnProperty.call(reference,key))&&
+          reference.repository===MODS_ANALYSIS_REFERENCE.repository&&
+          reference.commit===MODS_ANALYSIS_REFERENCE.commit&&
+          reference.path===MODS_ANALYSIS_REFERENCE.path&&
+          isObject(reference.snapshot)&&reference.snapshot.commit===MODS_ANALYSIS_REFERENCE.commit;
+        if(!exactModsAnalysis)
+          fail('MODS analysis source identity must use its exact complete Source locator');
+      }
       const allowed=['sourceId','fixtureOnly','safeSummary',...(label==='source'?SOURCE_LOCATOR_KEYS:['officialName'])];
       if(Object.keys(reference).some(key=>!allowed.includes(key))||
         ('fixtureOnly' in reference&&typeof reference.fixtureOnly!=='boolean')||
@@ -143,8 +159,14 @@
       if(hasSourceLocator){
         if(label!=='source'||SOURCE_LOCATOR_KEYS.some(key=>!Object.prototype.hasOwnProperty.call(reference,key)))
           fail('Source public locator must contain repository, commit, path, and snapshot together');
-        if(reference.repository!==PUBLIC_SOURCE_REPOSITORY)
-          fail('source public locator repository is not the allowlisted public Source repository');
+        if(reference.repository!==PUBLIC_SOURCE_REPOSITORY){
+          const exactModsAnalysis=reference.sourceId===MODS_ANALYSIS_REFERENCE.sourceId&&
+            reference.repository===MODS_ANALYSIS_REFERENCE.repository&&
+            reference.commit===MODS_ANALYSIS_REFERENCE.commit&&
+            reference.path===MODS_ANALYSIS_REFERENCE.path;
+          if(!exactModsAnalysis)
+            fail('source public locator repository is not the allowlisted public Source repository');
+        }
         if(typeof reference.commit!=='string'||!/^[a-f0-9]{40}$/.test(reference.commit))
           fail('source public locator commit must be a full lowercase Git SHA');
         validateSourceLocatorPath(reference.path,'source public locator');

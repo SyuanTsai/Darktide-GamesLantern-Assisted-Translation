@@ -14,6 +14,22 @@ function addPublicSourceLocator(release){
   refreshVersion(release);
   return release;
 }
+const MODS_ANALYSIS_LOCATOR=Object.freeze({
+  sourceId:'legacy:mods:psyker:brain-burst-improved:analysis-en',
+  repository:'https://github.com/SyuanTsai/Warhammer-40-000-DARKTIDE-Mods',
+  commit:'241ad76ce62330472aa423055a5b85db59bb6c0d',
+  path:'Game Info/releases/1.13.X/skills/talents/Psyker/en/psyker_brain_burst_improved.md'
+});
+function addModsAnalysisLocator(release){
+  release.manifest.source.references.push({
+    ...MODS_ANALYSIS_LOCATOR,
+    fixtureOnly:false,
+    safeSummary:'Public analysis reference for the Psyker Brain Burst Improved skill.',
+    snapshot:{commit:MODS_ANALYSIS_LOCATOR.commit}
+  });
+  refreshVersion(release);
+  return release;
+}
 test('UnitT10_LoadsOnlyTheRequiredSharedDomainsAndActivatesOneSnapshot',async()=>{
   // Scenario: Given a valid v17-D preview version, shared manifest, source registry, and four domain files.
   // Purpose: Verify exact byte hashes, dependency closure, fixed HTTPS origin, record references, and atomic snapshot handoff.
@@ -276,6 +292,84 @@ test('UnitT65_AcceptsOnlyCompleteOwnerScopedPublicSourceLocators',async()=>{
     /Web reference metadata may not contain Source-owned repository locators/i);
   assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,valid.dataRevision,
     'Web-owned references must not accept Source locators');
+});
+
+test('UnitT66_AcceptsOnlyTheExactModsAnalysisSourceLocator',async()=>{
+  // Scenario: Given a pending-preview package with the fixed MODS analysis locator or one field changed.
+  // Purpose: Permit this single public Source citation while rejecting nearby repository, commit, path, or identity variants before activation.
+  const valid=addModsAnalysisLocator(nativeRelease());
+  const validStore=new MemoryStore();
+  const {result}=await activate(valid,validStore,{allowPendingPreview:true});
+  const accepted=result.manifest.source.references.find(reference=>
+    reference.sourceId===MODS_ANALYSIS_LOCATOR.sourceId);
+  assert.deepEqual({repository:accepted.repository,commit:accepted.commit,path:accepted.path,
+    snapshot:accepted.snapshot,fixtureOnly:accepted.fixtureOnly},
+  {repository:MODS_ANALYSIS_LOCATOR.repository,commit:MODS_ANALYSIS_LOCATOR.commit,
+    path:MODS_ANALYSIS_LOCATOR.path,snapshot:{commit:MODS_ANALYSIS_LOCATOR.commit},fixtureOnly:false});
+  assert.equal((await validStore.getActive(GAME_RELEASE_ID)).dataRevision,valid.dataRevision);
+  assert.equal(valid.fetches.length,6);
+
+  const cases=[
+    {name:'nearby source ID',edit:reference=>{reference.sourceId+=':copy';},expected:/allowlisted public Source repository/i},
+    {name:'nearby repository',edit:reference=>{reference.repository='https://github.com/example/Warhammer-40-000-DARKTIDE-Mods';},
+      expected:/MODS analysis source identity must use its exact complete Source locator/i},
+    {name:'nearby commit',edit:reference=>{reference.commit='a'.repeat(40);reference.snapshot.commit=reference.commit;},
+      expected:/MODS analysis source identity must use its exact complete Source locator/i},
+    {name:'nearby safe path',edit:reference=>{reference.path='Game Info/releases/1.13.X/skills/talents/Psyker/en/psyker_brain_burst.md';},
+      expected:/MODS analysis source identity must use its exact complete Source locator/i}
+  ];
+  for(const [index,{name,edit,expected}] of cases.entries()){
+    const candidate=addModsAnalysisLocator(nativeRelease({
+      dataRevision:['4','5','6','7'][index].repeat(64),contentVersion:'0.0.'+String(index+4)
+    }));
+    const reference=candidate.manifest.source.references.find(item=>
+      item.sourceId===MODS_ANALYSIS_LOCATOR.sourceId);
+    edit(reference);
+    refreshVersion(candidate);
+    const store=new MemoryStore();
+    await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),
+      expected,name);
+    assert.equal(await store.getActive(GAME_RELEASE_ID),null,name+' must not activate a snapshot');
+    assert.equal(candidate.fetches.length,2,name+' must be rejected before domain downloads');
+  }
+});
+
+test('UnitT67_RejectsModsSourceIdUsingTheGenericSourceRepository',async()=>{
+  // Scenario: Given the reserved MODS analysis source ID with its MODS commit/path but the generic Source repository.
+  // Purpose: Ensure the reserved identity is bound to its complete fixed locator before any domain fetch or activation.
+  const candidate=addModsAnalysisLocator(nativeRelease({
+    dataRevision:'b'.repeat(64),contentVersion:'0.0.11'
+  }));
+  const reference=candidate.manifest.source.references.find(item=>
+    item.sourceId===MODS_ANALYSIS_LOCATOR.sourceId);
+  reference.repository='https://github.com/Aussiemon/Darktide-Source-Code';
+  refreshVersion(candidate);
+  const store=new MemoryStore();
+  await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),
+    /MODS analysis source identity must use its exact complete Source locator/i);
+  assert.equal(await store.getActive(GAME_RELEASE_ID),null,
+    'the MODS source identity with a generic repository must not activate');
+  assert.equal(candidate.fetches.length,2,
+    'the mismatched MODS locator must be rejected before domain downloads');
+});
+
+test('UnitT68_RejectsModsSourceIdWithoutLocatorFields',async()=>{
+  // Scenario: Given the reserved MODS analysis source ID with all public locator fields removed.
+  // Purpose: Ensure a reserved source identity cannot fall through the generic no-locator registry path.
+  const candidate=addModsAnalysisLocator(nativeRelease({
+    dataRevision:'c'.repeat(64),contentVersion:'0.0.12'
+  }));
+  const reference=candidate.manifest.source.references.find(item=>
+    item.sourceId===MODS_ANALYSIS_LOCATOR.sourceId);
+  for(const key of ['repository','commit','path','snapshot']) delete reference[key];
+  refreshVersion(candidate);
+  const store=new MemoryStore();
+  await assert.rejects(()=>activate(candidate,store,{allowPendingPreview:true}),
+    /MODS analysis source identity must use its exact complete Source locator/i);
+  assert.equal(await store.getActive(GAME_RELEASE_ID),null,
+    'the MODS source identity without locators must not activate');
+  assert.equal(candidate.fetches.length,2,
+    'the missing MODS locator must be rejected before domain downloads');
 });
 
 test('UnitT60_FailedUpdateKeepsActiveAndLegalRollbackSelectsOlderSameRelease',async()=>{

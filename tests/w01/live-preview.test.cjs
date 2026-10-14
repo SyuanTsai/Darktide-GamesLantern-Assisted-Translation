@@ -72,6 +72,17 @@ function presentationNames(bundle,domainKind,entityKind){
   assert.ok(presentations.length>0,'Compiled package has no zh-TW '+entityKind+' presentation');
   return presentations;
 }
+function summarizePreviewRequest(request){
+  let requestPath='unknown';
+  try{
+    const url=new URL(request.url);
+    requestPath=url.origin===DEV_ORIGIN?url.pathname:'non-preview-origin';
+  }catch{}
+  return {path:requestPath,status:Number.isInteger(request.status)?request.status:null,
+    contentType:typeof request.contentType==='string'?request.contentType:null,
+    networkError:request.networkError===true||Boolean(request.error),
+    error:typeof request.error==='string'?request.error.slice(0,300):null};
+}
 function termLocalizations(bundle){
   const document=JSON.parse(bundle.files.terms.bytes.toString('utf8'));
   const terms=document.records.filter(record=>record.owner==='source'&&record.kind==='term');
@@ -115,6 +126,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
   const pageErrors=[];
   const consoleErrors=[];
   const pageRequestOrigins=[];
+  const observedPreviewRequests=[];
   const originalWorkingDirectory=process.cwd();
   const transitionEvidence={offlineFaultAttempted:false,offlineFaultPreservedR1:false,
     validR2Activated:false,rollbackRestoredR1:false};
@@ -146,6 +158,20 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
     page.on('request',request=>{
       const url=new URL(request.url());
       pageRequestOrigins.push(url.protocol+'//'+url.host);
+      if(url.origin===DEV_ORIGIN)
+        observedPreviewRequests.push({event:'request',path:url.pathname,method:request.method()});
+    });
+    page.on('response',response=>{
+      const url=new URL(response.url());
+      if(url.origin===DEV_ORIGIN)
+        observedPreviewRequests.push({event:'response',path:url.pathname,status:response.status(),
+          contentType:response.headers()['content-type']||null});
+    });
+    page.on('requestfailed',request=>{
+      const url=new URL(request.url());
+      if(url.origin===DEV_ORIGIN)
+        observedPreviewRequests.push({event:'requestfailed',path:url.pathname,
+          error:request.failure()&&request.failure().errorText||'request failed'});
     });
     await page.goto('chrome-extension://'+extensionId+'/preview.html');
     await page.locator('#game-version').fill(expected.entry.game_version);
@@ -186,17 +212,77 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
 
     const previousActivationSignature=await page.evaluate(()=>JSON.stringify(window.W01Preview.getLastActivation()));
     await page.locator('#load-preview').click();
-    await page.waitForFunction(input=>{
-      const activation=window.W01Preview&&window.W01Preview.getLastActivation();
-      const snapshot=document.getElementById('snapshot-info');
-      const error=document.getElementById('error-message');
-      return activation&&JSON.stringify(activation)!==input.previousActivationSignature&&
-        document.body.dataset.w01State==='active'&&
-        ((snapshot&&snapshot.textContent.includes(input.expectedDataRevision))||(error&&!error.hidden));
-    },{previousActivationSignature,expectedDataRevision:expected.entry.data_revision},{timeout:90000});
-    const activation=await page.evaluate(()=>window.W01Preview.getLastActivation());
+    async function saveFailureDiagnostics(activation,reason){
+      let dom={captureError:null};
+      try{
+        dom=await page.evaluate(()=>{
+          const byId=id=>document.getElementById(id);
+          const error=byId('error-message');
+          const text=id=>{
+            const element=byId(id);
+            return element&&typeof element.textContent==='string'?element.textContent.trim().slice(0,300):null;
+          };
+          return {bodyState:document.body.dataset.w01State||null,
+            snapshotState:byId('snapshot-state')&&byId('snapshot-state').dataset.state||null,
+            dataStatus:text('data-status'),snapshotInfo:text('snapshot-info'),
+            errorVisible:Boolean(error&&!error.hidden),errorText:error&&error.textContent?
+              error.textContent.trim().slice(0,500):null,
+            loadButtonDisabled:Boolean(byId('load-preview')&&byId('load-preview').disabled)};
+        });
+      }catch(captureError){dom={captureError:String(captureError.message||captureError).slice(0,300)};}
+      const diagnosticPath=path.join(built.outputRoot,'live-preview-'+liveStage+'-'+runId+'-failure-diagnostics.json');
+      const failureScreenshotPath=path.join(built.outputRoot,'live-preview-'+liveStage+'-'+runId+'-failure.png');
+      let screenshot={path:failureScreenshotPath,created:false,sizeBytes:0,sha256:null,error:null};
+      try{
+        await page.screenshot({path:failureScreenshotPath,fullPage:true});
+        const screenshotBytes=fs.readFileSync(failureScreenshotPath);
+        screenshot={path:failureScreenshotPath,created:true,sizeBytes:screenshotBytes.byteLength,
+          sha256:sha256(screenshotBytes),error:null};
+      }catch(screenshotError){screenshot.error=String(screenshotError.message||screenshotError).slice(0,300);}
+      const networkRequests=Array.isArray(activation&&activation.networkRequests)?
+        activation.networkRequests.map(summarizePreviewRequest):[];
+      const diagnostic={schemaVersion:1,testName:'InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',
+        stage:liveStage,reason:String(reason&&reason.message||reason||'activation failed').slice(0,500),
+        expected:{contentVersion:expected.entry.content_version,dataRevision:expected.entry.data_revision,
+          manifestSha256:expected.manifestSha256},
+        activation:{changed:Boolean(activation&&JSON.stringify(activation)!==previousActivationSignature),
+          ok:activation&&activation.ok===true,error:activation&&typeof activation.error==='string'?
+            activation.error.slice(0,500):null,networkRequestCount:networkRequests.length},
+        networkRequests,observedPreviewRequests:[...observedPreviewRequests],
+        dom,pageRequestOrigins:[...pageRequestOrigins],errors:{console:[...consoleErrors],page:[...pageErrors]},screenshot};
+      fs.writeFileSync(diagnosticPath,JSON.stringify(diagnostic,null,2)+'\n',{flag:'wx'});
+      const diagnosticSha256=sha256(fs.readFileSync(diagnosticPath));
+      t.diagnostic(JSON.stringify({failureDiagnosticsPath:diagnosticPath,diagnosticSha256,
+        screenshotPath:screenshot.created?screenshot.path:null,screenshotSha256:screenshot.sha256,
+        bodyState:dom.bodyState||null,errorVisible:dom.errorVisible||false,
+        networkRequestCount:networkRequests.length,observedPreviewEventCount:observedPreviewRequests.length,
+        consoleErrorCount:consoleErrors.length,pageErrorCount:pageErrors.length},null,2));
+    }
+    let activation;
+    try{
+      await page.waitForFunction(input=>{
+        const activation=window.W01Preview&&window.W01Preview.getLastActivation();
+        if(!activation||JSON.stringify(activation)===input.previousActivationSignature) return false;
+        if(activation.ok===true){
+          const snapshot=document.getElementById('snapshot-info');
+          return document.body.dataset.w01State==='active'&&
+            Boolean(snapshot&&snapshot.textContent.includes(input.expectedDataRevision));
+        }
+        if(activation.ok===false){
+          const error=document.getElementById('error-message');
+          return Boolean(error&&!error.hidden&&error.textContent.trim());
+        }
+        return false;
+      },{previousActivationSignature,expectedDataRevision:expected.entry.data_revision},{timeout:90000});
+      activation=await page.evaluate(()=>window.W01Preview.getLastActivation());
+    }catch(waitError){
+      activation=await page.evaluate(()=>window.W01Preview&&window.W01Preview.getLastActivation());
+      await saveFailureDiagnostics(activation,waitError);
+      throw waitError;
+    }
     assert.notEqual(JSON.stringify(activation),previousActivationSignature,
       'The live runner observed a stale activation result from an earlier request.');
+    if(!activation.ok) await saveFailureDiagnostics(activation,activation.error||'Preview activation failed');
     assert.equal(activation.ok,true,'Fixed Preview activation failed: '+String(activation.error||'unknown'));
     const requests=activation.networkRequests;
     assert.equal(requests.length,6,'Live Preview must request version, manifest, and exactly four domains.');
