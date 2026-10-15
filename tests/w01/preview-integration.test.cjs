@@ -17,7 +17,7 @@ function serializeRoutes(release){
 }
 
 // Scenario: Given a verified R1 snapshot in the loaded MV3 preview, then a UI-triggered R2 update with mismatched domain bytes.
-// Purpose: Preserve R1 and keep the failure and request audit visible while rendering only verified snapshot text.
+// Purpose: Preserve R1 and keep the failure and request audit visible while rendering populated verified detail sections only.
 test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',async t=>{
   const previewSource=fs.readFileSync(path.join(__dirname,'../../extension/w01/preview.js'),'utf8');
   assert.doesNotMatch(previewSource,/\.(?:innerHTML|outerHTML)\s*=/);
@@ -36,8 +36,20 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
     const presentation=document.records.find(record=>record.owner==='web'&&record.kind==='presentation'&&
       record.entityRef==='fixture:skill:a');
     presentation.payload.name='<em>示意技能</em>';
+    const sections=presentation.payload.detailSections;
+    sections.conditions=[{itemId:'fixture-condition-skill',text:'Synthetic fixture condition.',
+      claimRefs:['fixture:claim:a']}];
+    sections.calculation=[{itemId:'fixture-calculation-skill',text:'Synthetic fixture calculation.',
+      claimRefs:['fixture:claim:a']}];
+    sections.notes=[{itemId:'fixture-note-skill',text:'Synthetic fixture note.',
+      claimRefs:['fixture:claim:a']}];
   });
   const r2=createRelease({dataRevision:DATA_R2,contentVersion:'0.0.2'});
+  rewriteDomain(r2,'weapons',document=>{
+    const presentation=document.records.find(record=>record.kind==='presentation'&&
+      record.entityRef==='fixture:weapon:a');
+    presentation.payload.detailSections={effects:[],conditions:[],calculation:[],notes:[],extra:[]};
+  });
   const r2InvalidRoutes=serializeRoutes(r2);
   const r2SkillsPath='/data/'+DATA_R2+'/skills.json';
   const r2SkillsBytes=r2.routes.get(r2SkillsPath);
@@ -104,12 +116,21 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
     const contentText=await page.locator('#content-cards').textContent();
     assert.ok(contentText.includes('冷卻 < 40 秒 & 保留原句字元。'));
     assert.ok(contentText.includes('Cooldown < 40 seconds & still literal.'));
+    assert.ok(contentText.includes('Synthetic fixture condition.'));
+    assert.ok(contentText.includes('Synthetic fixture calculation.'));
+    assert.ok(contentText.includes('Synthetic fixture note.'));
     assert.ok(contentText.includes('獨立勘誤'));
     assert.ok(contentText.includes('待人工審核'));
     assert.ok(contentText.includes('已定義階級'));
     assert.ok(contentText.includes('可取得階級：未知'));
     assert.ok(contentText.includes('T1 · 資料標示為未知'));
-    assert.equal(await page.locator('#content-cards .detail-section h4').count(),15);
+    const detailSectionHeadings=await page.locator('#content-cards .detail-section h4').allTextContents();
+    assert.deepEqual(detailSectionHeadings,
+      ['效果','條件','計算','補充說明','額外說明',
+        '效果','額外說明',
+        '效果','額外說明']);
+    assert.ok(!(await page.locator('#content-cards .detail-section .empty-value').allTextContents())
+      .includes('—'));
     assert.ok((await page.locator('#term-cards').textContent()).includes('集中維護的繁中定義。'));
     await page.screenshot({path:screenshots.r1,fullPage:true});
 
@@ -153,6 +174,11 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
       document.getElementById('snapshot-metadata').textContent.includes('0.0.2'));
     rendered=await page.locator('#snapshot-info').textContent();
     assert.ok(rendered.includes(DATA_R2));
+    const emptyWeaponCard=page.locator('#content-cards .entity-card').filter({hasText:'示意武器'}).first();
+    assert.equal(await emptyWeaponCard.locator('.detail-section').count(),0,
+      'A presentation with five empty sections must render no detail section.');
+    assert.ok(!(await emptyWeaponCard.textContent()).includes('—'),
+      'A presentation with five empty sections must not render an empty dash.');
     await page.screenshot({path:screenshots.r2,fullPage:true});
 
     const rollback=await page.evaluate(async input=>new Promise(resolve=>{
@@ -183,7 +209,8 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
       syntheticOnly:true,
       htmlTextRenderedLiterally:true,
       fixtureAndPendingBadgesVisible:true,
-      fiveDetailSectionsPerEntity:5,
+      detailSectionHeadings,
+      emptySectionPlaceholdersHidden:true,
       invalidUpdateAndTransactionAbortPreservedR1:true,
       failedUpdateMessageVisibleAfterRefresh:true,
       failedUpdateNetworkAuditRetained:true,
@@ -287,14 +314,22 @@ test('InterT12_RendersNativeOfficialZhTwAndPendingCompatibilityNotice',async t=>
   }
 });
 
-// Scenario: Given a validated four-tier native blessing presentation in extension-origin IndexedDB.
-// Purpose: Keep official text and authored effect details synchronized while selecting LV4, LV1, LV2, LV3, and LV4.
+// Scenario: Given a validated four-tier native blessing presentation with sparse details in extension-origin IndexedDB.
+// Purpose: Keep official text and authored details synchronized while hiding empty sections across LV4, LV1, LV2, LV3, and LV4.
 test('InterT14_BlessingTierSelectorKeepsOfficialTextAndDetailsOnTheSameTier',async t=>{
   const {playwright,version:playwrightVersion}=loadPlaywright();
   const built=buildDevExtension({includeTestHarness:true});
   const profilePath=path.join(built.outputRoot,'profile');
   const screenshot=path.join(built.outputRoot,'preview-blessing-tier-selector.png');
   const candidate=tieredNativeRelease({dataRevision:'7'.repeat(64),contentVersion:'0.0.74'});
+  rewriteDomain(candidate,'blessings',document=>{
+    const presentation=document.records.find(record=>record.kind==='presentation'&&
+      record.entityRef==='fixture:blessing:a');
+    const tierFour=presentation.payload.tierPresentations.options.find(option=>option.tier===4);
+    tierFour.detailSections.effects.push({itemId:'fixture-tier-zero-value',text:'0',
+      claimRefs:['fixture:blessing:tier-4-percent']});
+    presentation.payload.detailSections=JSON.parse(JSON.stringify(tierFour.detailSections));
+  });
   let context;
   const pageErrors=[];
   const consoleErrors=[];
@@ -325,7 +360,11 @@ test('InterT14_BlessingTierSelectorKeepsOfficialTextAndDetailsOnTheSameTier',asy
     assert.deepEqual(await selector.locator('option').allTextContents(),['LV1','LV2','LV3','LV4']);
     assert.equal(await selector.inputValue(),'4');
     assert.ok((await card.textContent()).includes('可取得階級：未知'));
-    assert.equal(await card.locator('.tier-selected-presentation .detail-section').count(),5);
+    const initialSelected=card.locator('.tier-selected-presentation');
+    assert.deepEqual(await initialSelected.locator('.detail-section h4').allTextContents(),['效果','計算']);
+    assert.ok(!(await initialSelected.locator('.detail-section .empty-value').allTextContents())
+      .includes('—'));
+    assert.ok((await initialSelected.locator('.detail-section li').allTextContents()).includes('0'));
     assert.equal(await card.locator('.official-copy').count(),1,
       'the tiered blessing renders one selected official presentation at a time');
 
@@ -345,8 +384,16 @@ test('InterT14_BlessingTierSelectorKeepsOfficialTextAndDetailsOnTheSameTier',asy
       assert.ok(text.includes(step.effect));
       assert.ok(text.includes('Synthetic active duration 2 seconds.'));
       assert.ok(text.includes('持續 2 秒。'));
+      const sectionHeadings=await selected.locator('.detail-section h4').allTextContents();
+      assert.deepEqual(sectionHeadings,['效果','計算'],
+        'Only populated detail sections should appear, in their original order.');
+      const emptySectionValues=await selected.locator('.detail-section .empty-value').allTextContents();
+      assert.ok(!emptySectionValues.includes('—'),'Empty detail sections must not display a dash.');
+      if(step.tier===4)
+        assert.ok((await selected.locator('.detail-section li').allTextContents()).includes('0'),
+          'A non-empty zero value must remain visible.');
     }
-    assert.equal(await card.locator('.tier-selected-presentation .detail-section').count(),5);
+    assert.equal(await card.locator('.tier-selected-presentation .detail-section h4').count(),2);
     assert.deepEqual(pageErrors,[]);
     assert.deepEqual(consoleErrors,[]);
     await page.screenshot({path:screenshot,fullPage:true});
@@ -355,7 +402,8 @@ test('InterT14_BlessingTierSelectorKeepsOfficialTextAndDetailsOnTheSameTier',asy
       playwrightVersion,projectDeclaredPlaywright:'1.62.1',chromeVersion:context.browser().version(),
       selectorOptions:['LV1','LV2','LV3','LV4'],defaultTier:4,sequence:[4,1,2,3,4],
       officialTextAndDetailsStaySynchronized:true,obtainableTiersRemainUnknown:true,
-      fiveDetailSectionsVisible:true,consoleErrors,pageErrors,screenshot},null,2));
+      visibleDetailSectionHeadings:['效果','計算'],emptySectionsHidden:true,zeroValueVisibleForTier4:true,
+      consoleErrors,pageErrors,screenshot},null,2));
   }catch(error){
     if(error.message.includes('spawn UNKNOWN')){
       t.diagnostic('Bundled Chromium could not start: '+error.message);

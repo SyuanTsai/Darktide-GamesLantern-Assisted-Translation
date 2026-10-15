@@ -124,22 +124,19 @@
   }
   function renderDetailSections(parent,sections,localizedTerms){
     for(const [key,label] of SECTION_LABELS){
+      const items=sections&&Array.isArray(sections[key])?sections[key]:[];
+      if(items.length===0) continue;
       const block=node('section',undefined,'detail-section');
       block.append(node('h4',label));
-      const items=sections&&Array.isArray(sections[key])?sections[key]:[];
-      if(items.length===0){
-        block.append(node('p','—','empty-value'));
-      }else{
-        const list=node('ul');
-        for(const item of items){
-          const row=node('li');
-          if(typeof item.text==='string') row.append(node('span',item.text));
-          if(typeof item.termRef==='string') appendTermReference(row,item.termRef,localizedTerms);
-          if(!row.childNodes.length) row.append(node('span','此欄資料格式不含可顯示文字。','empty-value'));
-          list.append(row);
-        }
-        block.append(list);
+      const list=node('ul');
+      for(const item of items){
+        const row=node('li');
+        if(typeof item.text==='string') row.append(node('span',item.text));
+        if(typeof item.termRef==='string') appendTermReference(row,item.termRef,localizedTerms);
+        if(!row.childNodes.length) row.append(node('span','此欄資料格式不含可顯示文字。','empty-value'));
+        list.append(row);
       }
+      block.append(list);
       parent.append(block);
     }
   }

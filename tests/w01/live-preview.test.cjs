@@ -20,6 +20,36 @@ const priorDataRevision=process.env.SYP_W01_PRIOR_DATA_REVISION;
 const liveStage=process.env.SYP_W01_LIVE_STAGE||'r1-baseline';
 const transitionToR2=liveStage==='r2-transition';
 
+const DETAIL_SECTION_LABELS=[
+  ['effects','效果'],
+  ['conditions','條件'],
+  ['calculation','計算'],
+  ['notes','補充說明'],
+  ['extra','額外說明']
+];
+
+async function verifyDetailSections(container,sections,entity){
+  const populatedEntries=DETAIL_SECTION_LABELS.filter(([key])=>
+    sections&&Array.isArray(sections[key])&&sections[key].length>0
+  );
+  const labels=populatedEntries.map(([,label])=>label);
+  const detailSections=container.locator('.detail-section');
+  assert.deepEqual(await detailSections.locator('h4').allTextContents(),labels,
+    entity+' section headings must match its populated JSON sections in order.');
+  for(let index=0;index<populatedEntries.length;index++){
+    const [key,label]=populatedEntries[index];
+    const renderedTextNodes=await detailSections.nth(index).locator('li span').allTextContents();
+    for(const item of sections[key]){
+      if(typeof item.text==='string')
+        assert.ok(renderedTextNodes.includes(item.text),
+          entity+' '+label+' text must appear in the rendered detail content.');
+    }
+  }
+  const emptyValues=await detailSections.locator('.empty-value').allTextContents();
+  assert.ok(!emptyValues.includes('—'),entity+' must not display an empty-section dash.');
+  return {entity,labels,detailTextMatched:true,emptySectionsHidden:true};
+}
+
 function sha256(bytes){
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
@@ -344,6 +374,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
     assert.ok(localizedOfficial&&typeof localizedOfficial.text==='string');
     assert.ok(contentCards.includes(localizedOfficial.text));
     const tierSelectorEvidence=[];
+    const detailSectionEvidence=[];
     const requiredFeatures=expected.manifest.compatibility.requiredFeatures;
     const hasTierFeature=requiredFeatures.includes('blessing-tier-presentations-v1');
     const tieredBlessings=tieredBlessingPresentations(expected);
@@ -367,14 +398,32 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
         assert.ok(selectedText.includes('目前選取：LV'+String(tier)));
         assert.ok(selectedText.includes(option.official.localizations['zh-TW'].resolvedText),
           'The selected native zh-TW official string must match the same tier option.');
-        for(const section of Object.values(option.detailSections)){
-          for(const item of section){
-            if(typeof item.text==='string') assert.ok(selectedText.includes(item.text),
-              'The selected tier details must come from the same option as its official string.');
-          }
-        }
-        assert.equal(await selected.locator('.detail-section').count(),5);
-        tierSelectorEvidence.push({tier,officialZhTwMatched:true,detailTextMatched:true,fiveSectionsVisible:true});
+        assert.deepEqual(Object.keys(option.detailSections),DETAIL_SECTION_LABELS.map(([key])=>key),
+          'The five-section JSON contract must remain intact for every tier.');
+        const detailEvidence=await verifyDetailSections(selected,option.detailSections,presentation.payload.name);
+        tierSelectorEvidence.push({tier,officialZhTwMatched:true,...detailEvidence});
+      }
+    }
+    const allEntityCards=page.locator('#content-cards .entity-card');
+    const visibleEntityNames=await allEntityCards.locator('h3').allTextContents();
+    const visibleEntityKinds=await allEntityCards.locator('.entity-kind').allTextContents();
+    const presentationOccurrences=new Map();
+    for(const [entityKind,presentations] of [['skill',skillPresentations],['weapon',weaponPresentations]]){
+      const kindLabel=entityKind==='skill'?'技能':'武器';
+      for(const presentation of presentations){
+        const key=kindLabel+'\0'+presentation.payload.name;
+        const occurrence=presentationOccurrences.get(key)||0;
+        presentationOccurrences.set(key,occurrence+1);
+        const matchingIndexes=[];
+        for(let index=0;index<visibleEntityNames.length;index++)
+          if(visibleEntityNames[index]===presentation.payload.name&&visibleEntityKinds[index]===kindLabel)
+            matchingIndexes.push(index);
+        const cardIndex=matchingIndexes[occurrence];
+        assert.notEqual(cardIndex,undefined,
+          'The compiled '+entityKind+' presentation must map to its rendered entity card.');
+        const card=allEntityCards.nth(cardIndex);
+        const detailEvidence=await verifyDetailSections(card,presentation.payload.detailSections,presentation.payload.name);
+        detailSectionEvidence.push({kind:entityKind,...detailEvidence});
       }
     }
     const localizedTerms=termLocalizations(expected);
@@ -384,8 +433,6 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       if(typeof term.payload.definition==='string')
         assert.ok((await page.locator('#terms-content').textContent()).includes(term.payload.definition));
     }
-    for(const sectionLabel of ['效果','條件','計算','補充說明','額外說明'])
-      assert.ok(contentCards.includes(sectionLabel));
     if(transitionToR2){
       transitionEvidence.validR2Activated=true;
       await page.screenshot({path:screenshotPath,fullPage:true});
@@ -432,7 +479,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       announcementsFetched:false,
       rendered:{skills:skillPresentations.length,blessings:blessingPresentations.length,
         weapons:weaponPresentations.length,terms:localizedTerms.length,
-        zhTwLocalizedText:true,fiveDetailSections:true,
+        zhTwLocalizedText:true,detailSectionsByEntity:detailSectionEvidence,
         blessingTierSequence:tierSelectorEvidence},
       transition:transitionEvidence,
       errors:{console:consoleErrors,page:pageErrors},
