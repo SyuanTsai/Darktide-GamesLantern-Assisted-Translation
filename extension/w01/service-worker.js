@@ -22,6 +22,7 @@ function summary(snapshot){
     dataRevision:snapshot.dataRevision,
     manifestSha256:snapshot.manifestSha256||null,
     versionBuildId:snapshot.versionBuildId||null,
+    packageKind:manifest.fixtureOnly===true?'fixture':manifest.publicationEligible===true?'published':'pending-preview',
     fixtureOnly:manifest.fixtureOnly===true,
     publicationEligible:manifest.publicationEligible===true,
     fileHashes

@@ -474,17 +474,73 @@
         fail('tier '+option.tier+' official identity or template differs from tier 4');
     }
   }
+  function validateWeaponView(view){
+    assertExactKeys(view,['markLabel','attackHeading','comparisonHeading','note','attackModes','statSections'],
+      'weapon view');
+    for(const key of ['markLabel','attackHeading','comparisonHeading','note'])
+      if(!isNonEmptyString(view[key])) fail('weapon view '+key+' is invalid');
+    if(!Array.isArray(view.attackModes)||view.attackModes.length===0||
+      !Array.isArray(view.statSections)||view.statSections.length===0) fail('weapon view sections are invalid');
+    const modes=new Set();
+    for(const mode of view.attackModes){
+      assertExactKeys(mode,['mode','segments'],'weapon attack mode');
+      if(!['light','heavy','special'].includes(mode.mode)||modes.has(mode.mode)||
+        !Array.isArray(mode.segments)||mode.segments.length===0) fail('weapon attack mode is invalid');
+      modes.add(mode.mode);
+      let expectedIndex=1;
+      for(const segment of mode.segments){
+        assertExactKeys(segment,['index','targetRole'],'weapon attack segment');
+        if(segment.index!==expectedIndex++||!['single-target','multi-target-cleave'].includes(segment.targetRole))
+          fail('weapon attack segment is invalid');
+      }
+    }
+    const statIds=new Set();
+    const units=new Set(['attack-power-point','percent','stamina-point','stamina-point-per-second','dodge-count','ratio']);
+    const formats=new Set(['fixed-2','fixed-2-signed','floor-fixed-2','multiplier-percent-fixed-2-signed','percentage-fixed-2']);
+    const decimal=/^-?\d+(?:\.\d+)?$/;
+    for(const section of view.statSections){
+      assertExactKeys(section,['sourceStat','label','rows'],'weapon stat section');
+      if(!isNonEmptyString(section.sourceStat)||statIds.has(section.sourceStat)||!isNonEmptyString(section.label)||
+        !Array.isArray(section.rows)||section.rows.length===0) fail('weapon stat section is invalid');
+      statIds.add(section.sourceStat);
+      for(const row of section.rows){
+        assertExactKeys(row,['label','claimRefs','values'],'weapon stat row');
+        if(!isNonEmptyString(row.label)||!Array.isArray(row.claimRefs)||row.claimRefs.length!==2||
+          row.claimRefs.some(ref=>!isNonEmptyString(ref))||!Array.isArray(row.values)||row.values.length!==2)
+          fail('weapon stat row is invalid');
+        for(const value of row.values){
+          assertExactKeys(value,['comparisonStat','value','displayValue','displayFormat','claimRef'],'weapon comparison value');
+          for(const [key,object] of [['comparisonStat',value.comparisonStat],['value',value.value],['displayValue',value.displayValue]]){
+            assertExactKeys(object,['decimal','status','unit'],'weapon '+key);
+            if(object.status!=='known'||typeof object.decimal!=='string'||!decimal.test(object.decimal)||
+              !isNonEmptyString(object.unit)||!units.has(object.unit)) fail('weapon '+key+' is invalid');
+          }
+          if(value.comparisonStat.unit!=='percent'||!formats.has(value.displayFormat)||
+            !isNonEmptyString(value.claimRef)||!row.claimRefs.includes(value.claimRef))
+            fail('weapon comparison format or claim reference is invalid');
+        }
+        if(row.values[0].comparisonStat.decimal===row.values[1].comparisonStat.decimal||
+          row.claimRefs[0]!==row.values[0].claimRef||row.claimRefs[1]!==row.values[1].claimRef)
+          fail('weapon comparison points are invalid');
+      }
+    }
+  }
   async function validatePresentation(record,webReferences,cryptoApi,
-    {nativeFeature=false,tierFeature=false,tierAllowed=false}={}){
+    {nativeFeature=false,tierFeature=false,tierAllowed=false,weaponAllowed=false}={}){
     const webIds=webReferences instanceof Set?webReferences:new Set(webReferences.map(reference=>reference.sourceId));
     if(!isNonEmptyString(record.entityRef)||record.locale!=='zh-TW') fail('presentation identity or locale is missing');
     const payload=record.payload,payloadKeys=['name','detailSections'];
+    if('weaponView' in payload){
+      if(!weaponAllowed) fail('weapon view is only supported for weapon presentations');
+      payloadKeys.push('weaponView');
+    }
     if('tierPresentations' in payload) payloadKeys.push('tierPresentations');
     if('official' in payload) payloadKeys.push('official','errata');
     if(Object.keys(payload).some(key=>!payloadKeys.includes(key))||
       ('official' in payload)!==('errata' in payload)||!isNonEmptyString(payload.name)||
       !isObject(payload.detailSections)) fail('presentation payload is incomplete');
     validateDetailSections(payload.detailSections,'presentation detail sections');
+    if('weaponView' in payload) validateWeaponView(payload.weaponView);
     const hasTierPresentations='tierPresentations' in payload;
     if(hasTierPresentations&&(!tierFeature||!nativeFeature))
       fail('tier presentation requires blessing-tier-presentations-v1 and official-native-localizations-v1');
@@ -602,7 +658,7 @@
       if(record.kind==='presentation') await validatePresentation(record,manifest.web.references,cryptoApi,{
         nativeFeature:manifest.compatibility.requiredFeatures.includes('official-native-localizations-v1'),
         tierFeature:manifest.compatibility.requiredFeatures.includes(BLESSING_TIER_FEATURE),
-        tierAllowed:kind==='blessings'});
+        tierAllowed:kind==='blessings',weaponAllowed:kind==='weapons'});
       if(record.kind==='term-localization'&&(!isNonEmptyString(record.entityRef)||record.locale!=='zh-TW'||
         !isNonEmptyString(record.payload.label)||!isNonEmptyString(record.payload.definition)||
         Object.keys(record.payload).some(key=>!['label','definition'].includes(key)))) fail('term localization is incomplete');

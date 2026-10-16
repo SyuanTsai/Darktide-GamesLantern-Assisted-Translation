@@ -54,6 +54,26 @@
   function appendPair(list,label,value){
     list.append(node('dt',label),node('dd',value));
   }
+  function formatWeaponDisplay(value,omitStaminaUnit=false){
+    const display=value&&value.displayValue;
+    const formats=['fixed-2','fixed-2-signed','floor-fixed-2','multiplier-percent-fixed-2-signed','percentage-fixed-2'];
+    if(!display||display.status!=='known'||typeof display.decimal!=='string'||!formats.includes(value.displayFormat))
+      throw new Error('武器素質顯示值無效');
+    let decimal=display.decimal;
+    if(['fixed-2-signed','multiplier-percent-fixed-2-signed'].includes(value.displayFormat)&&!decimal.startsWith('-'))
+      decimal='+'+decimal;
+    const suffixByUnit={
+      'attack-power-point':'',
+      percent:'%',
+      'stamina-point':' 耐力',
+      'stamina-point-per-second':' 耐力／秒',
+      'dodge-count':' 次',
+      ratio:''
+    };
+    if(!Object.hasOwn(suffixByUnit,display.unit)) throw new Error('武器素質單位無效');
+    const suffix=omitStaminaUnit&&display.unit==='stamina-point'?'':suffixByUnit[display.unit];
+    return decimal+suffix;
+  }
   function reviewLabel(record){
     return record&&record.reviewState==='approved'?'已標示審核完成':'待人工審核';
   }
@@ -201,6 +221,58 @@
     }
     card.append(block);
   }
+  function renderWeaponView(card,view){
+    if(!view||typeof view!=='object') return;
+    const block=node('section',undefined,'weapon-view');
+    block.append(node('h4','武器標示'),node('p',view.markLabel,'weapon-mark'));
+    block.append(node('h4',view.attackHeading));
+    for(const mode of view.attackModes){
+      const modeBlock=node('section',undefined,'weapon-attack-mode');
+      modeBlock.dataset.mode=mode.mode;
+      const modeLabel=mode.mode==='light'?'輕攻擊':mode.mode==='heavy'?'重攻擊':'特殊攻擊';
+      modeBlock.append(node('h5',modeLabel));
+      for(const segment of mode.segments){
+        const targetLabel=segment.targetRole==='single-target'?'單體目標':'群體順劈';
+        const row=node('p','第'+String(segment.index)+'段 · '+targetLabel,'attack-segment');
+        row.dataset.targetRole=segment.targetRole;
+        modeBlock.append(row);
+      }
+      block.append(modeBlock);
+    }
+    block.append(node('h4',view.comparisonHeading));
+    for(const section of view.statSections){
+      const sectionBlock=node('section',undefined,'weapon-stat-section');
+      sectionBlock.dataset.sourceStat=section.sourceStat;
+      sectionBlock.append(node('h5',section.label));
+      const table=node('table',undefined,'weapon-stat-table');
+      table.append(node('caption',section.label+'比較值'));
+      const header=node('tr');
+      header.append(node('th','素質','stat-label-header'));
+      for(const item of section.rows[0].values){
+        const cell=node('th',item.comparisonStat.decimal+'%');
+        cell.scope='col';
+        header.append(cell);
+      }
+      const thead=node('thead');
+      thead.append(header);
+      table.append(thead);
+      const body=node('tbody');
+      for(const row of section.rows){
+        const tr=node('tr',undefined,'weapon-stat-row');
+        tr.append(node('th',row.label));
+        const omitStaminaUnit=row.label==='耐力';
+        for(const value of row.values){
+          tr.append(node('td',formatWeaponDisplay(value,omitStaminaUnit),'comparison-value'));
+        }
+        body.append(tr);
+      }
+      table.append(body);
+      sectionBlock.append(table);
+      block.append(sectionBlock);
+    }
+    block.append(node('p',view.note,'weapon-view-note'));
+    card.append(block);
+  }
   function renderEntityCards(snapshot,localizedTerms){
     const target=byId('content-cards');
     clear(target);
@@ -215,6 +287,7 @@
         if(!presentation||!presentation.payload) continue;
         const payload=presentation.payload;
         const card=node('article',undefined,'entity-card');
+        card.dataset.entityRef=entity.recordId;
         card.append(node('p',config.label,'entity-kind'));
         card.append(node('h3',typeof payload.name==='string'?payload.name:'未提供繁中名稱'));
         card.append(node('span',reviewLabel(presentation),'review-chip'));
@@ -223,6 +296,7 @@
         renderErrata(card,payload.errata);
         if(!tieredBlessing) renderDetailSections(card,payload.detailSections,localizedTerms);
         if(config.domain==='blessings') appendBlessingTiers(card,domain,entity,payload,localizedTerms);
+        if(config.domain==='weapons') renderWeaponView(card,payload.weaponView);
         target.append(card);
         count++;
       }
@@ -311,6 +385,7 @@
     appendPair(metadata,'發佈識別',active.gameReleaseId);
     appendPair(metadata,'內容版本',active.contentVersion);
     appendPair(metadata,'資料修訂',active.dataRevision);
+    appendPair(metadata,'套件類型',active.packageKind||'fixture');
     appendPair(metadata,'Fixture only',String(manifest.fixtureOnly===true));
     appendPair(metadata,'可發布',String(manifest.publicationEligible===true));
     appendPair(metadata,'待審記錄',String(hasPending));

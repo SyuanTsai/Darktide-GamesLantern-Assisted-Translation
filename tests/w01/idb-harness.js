@@ -30,7 +30,7 @@ function sendToBackground(message){
 }
 function snapshotSummary(snapshot){
   return snapshot?{gameReleaseId:snapshot.gameReleaseId,gameVersion:snapshot.gameVersion,
-    contentVersion:snapshot.contentVersion,dataRevision:snapshot.dataRevision}:null;
+    contentVersion:snapshot.contentVersion,dataRevision:snapshot.dataRevision,packageKind:snapshot.manifest.fixtureOnly===true?'fixture':snapshot.manifest.publicationEligible===true?'published':'pending-preview',manifestSha256:snapshot.manifestSha256}:null;
 }
 async function runW01IdbScenario(input){
   const api=W01SharedLoader,releaseId=input.gameReleaseId,gameVersion=input.gameVersion;

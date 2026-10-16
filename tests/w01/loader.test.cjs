@@ -116,6 +116,38 @@ test('UnitT50_RejectsUnknownRefsMissingPresentationAndRemoteExecutableFields',as
   }
 });
 
+test('UnitT52_AcceptsOnlyValidatedWeaponViewDataAndKeepsTheActiveSnapshot',async()=>{
+  // Scenario: Given a weapon presentation with a closed attack/stat view, then an update with an unsupported target role.
+  // Purpose: Validate the Web 0.0.16 weapon presentation shape before activation and preserve the prior snapshot on failure.
+  const weaponView={
+    markLabel:'Mk IV',attackHeading:'攻擊模式',comparisonHeading:'比較值',note:'待審預覽資料',
+    attackModes:[{mode:'light',segments:[{index:1,targetRole:'single-target'}]}],
+    statSections:[{sourceStat:'damage',label:'傷害',rows:[{label:'基礎傷害',
+      claimRefs:['fixture:claim:a','fixture:claim:a'],values:[
+        {comparisonStat:{decimal:'60',status:'known',unit:'percent'},value:{decimal:'1',status:'known',unit:'attack-power-point'},
+          displayValue:{decimal:'1.00',status:'known',unit:'attack-power-point'},displayFormat:'fixed-2',claimRef:'fixture:claim:a'},
+        {comparisonStat:{decimal:'80',status:'known',unit:'percent'},value:{decimal:'2',status:'known',unit:'attack-power-point'},
+          displayValue:{decimal:'2.00',status:'known',unit:'attack-power-point'},displayFormat:'fixed-2',claimRef:'fixture:claim:a'}
+      ]}]}]
+  };
+  function addWeaponView(release,targetRole='single-target'){
+    rewriteDomain(release,'weapons',document=>{
+      const presentation=document.records.find(record=>record.owner==='web'&&record.kind==='presentation');
+      presentation.payload.weaponView=JSON.parse(JSON.stringify(weaponView));
+      presentation.payload.weaponView.attackModes[0].segments[0].targetRole=targetRole;
+    });
+  }
+  const store=new MemoryStore();
+  const valid=createRelease({dataRevision:DATA_R1});
+  addWeaponView(valid);
+  const {result}=await activate(valid,store);
+  assert.deepEqual(result.domains.weapons.records.find(record=>record.kind==='presentation').payload.weaponView,weaponView);
+
+  const invalid=createRelease({dataRevision:DATA_R2,contentVersion:'0.0.2'});
+  addWeaponView(invalid,'remote-execution');
+  await assert.rejects(()=>activate(invalid,store),/weapon attack segment is invalid/i);
+  assert.equal((await store.getActive(GAME_RELEASE_ID)).dataRevision,DATA_R1);
+});
 test('UnitT55_EnforcesOwnerScopedWebRefsOfficialHashesAndASections',async()=>{
   // Scenario: Given a syntactically valid shared domain with a forged owner ref, official digest, or incomplete A shape.
   // Purpose: Keep Web-owned wording separate from Source evidence and preserve the pinned A fields byte-for-byte.

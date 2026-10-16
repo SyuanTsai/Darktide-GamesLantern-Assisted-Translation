@@ -118,3 +118,18 @@ footer { color: #52627a; margin: 22px 0 8px; }
   .metadata-grid dd { margin-bottom: 8px; }
   label { width: 100%; }
 }
+.weapon-view {
+  border-top: 1px solid #e6eaf0;
+  margin-top: 12px;
+  padding-top: 4px;
+}
+.weapon-mark { font-weight: 700; }
+.weapon-attack-mode, .weapon-stat-section { margin: 8px 0; }
+.weapon-attack-mode h5, .weapon-stat-section h5 { margin: 6px 0; }
+.attack-segment { margin: 2px 0; }
+.weapon-stat-section { overflow-x: auto; }
+.weapon-stat-table { border-collapse: collapse; min-width: 460px; width: 100%; }
+.weapon-stat-table th, .weapon-stat-table td { border: 1px solid #d9e0e8; padding: 5px 8px; text-align: left; }
+.weapon-stat-table caption { font-weight: 700; text-align: left; }
+.weapon-stat-table .comparison-value { font-variant-numeric: tabular-nums; }
+.weapon-view-note { color: #52627a; font-size: .9rem; }
