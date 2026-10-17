@@ -124,6 +124,17 @@ footer { color: #52627a; margin: 22px 0 8px; }
   padding-top: 4px;
 }
 .weapon-mark { font-weight: 700; }
+.weapon-mark-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.weapon-mark-tab { background: #edf2f7; color: #202124; }
+.weapon-mark-tab:hover { background: #dce8f4; }
+.weapon-mark-tab[aria-selected="true"] { background: #173b65; color: #fff; font-weight: 700; }
+.weapon-mark-tab[aria-selected="true"]:hover { background: #244f80; }
+.weapon-mark-panel:focus-visible { outline: 3px solid #8bbcf1; outline-offset: 2px; }
 .weapon-attack-mode, .weapon-stat-section { margin: 8px 0; }
 .weapon-attack-mode h5, .weapon-stat-section h5 { margin: 6px 0; }
 .attack-segment { margin: 2px 0; }

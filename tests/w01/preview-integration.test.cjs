@@ -131,7 +131,10 @@ test('InterT11_PreviewRendersVerifiedIdbSnapshotsAsTextAcrossFaultAndRollback',a
         '效果','額外說明']);
     assert.ok(!(await page.locator('#content-cards .detail-section .empty-value').allTextContents())
       .includes('—'));
-    assert.ok((await page.locator('#term-cards').textContent()).includes('集中維護的繁中定義。'));
+    const renderedTermReferences=page.locator('#content-cards .term-reference');
+    assert.ok((await renderedTermReferences.allTextContents())
+      .some(text=>text.includes('集中維護的繁中定義。')));
+    assert.equal(await page.locator('#terms-content').count(),0);
     await page.screenshot({path:screenshots.r1,fullPage:true});
 
     await worker.evaluate(routes=>{

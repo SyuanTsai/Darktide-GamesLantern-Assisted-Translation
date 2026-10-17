@@ -129,6 +129,13 @@ function termLocalizations(bundle){
   return localizedTerms;
 }
 
+function collectTermReferences(sections,references){
+  for(const items of Object.values(sections||{})){
+    if(!Array.isArray(items)) continue;
+    for(const item of items)
+      if(item&&typeof item.termRef==='string') references.add(item.termRef);
+  }
+}
 test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
   skip:!enabled?'Set SYP_W01_LIVE_PREVIEW=1 only after Web publishes the matching preview package.':
     !packageDirectory?'Set SYP_W01_EXPECTED_PACKAGE_DIR to the independently compiled Web package.':false
@@ -362,6 +369,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
     assert.ok((await page.locator('#snapshot-info').textContent()).includes(expected.entry.data_revision));
 
     const contentCards=await page.locator('#content-cards').textContent();
+    const renderedTextSnapshots=[contentCards];
     const renderedEntityNames=await page.locator('#content-cards .entity-card h3').allTextContents();
     const skillPresentations=presentationNames(expected,'skills','skill');
     const blessingPresentations=presentationNames(expected,'blessings','blessing');
@@ -395,6 +403,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
         const option=presentation.payload.tierPresentations.options.find(item=>item.tier===tier);
         assert.ok(option,'The compiled package is missing the selected tier option.');
         const selectedText=await selected.textContent();
+        renderedTextSnapshots.push(selectedText);
         assert.ok(selectedText.includes('目前選取：LV'+String(tier)));
         assert.ok(selectedText.includes(option.official.localizations['zh-TW'].resolvedText),
           'The selected native zh-TW official string must match the same tier option.');
@@ -408,31 +417,80 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
     const visibleEntityNames=await allEntityCards.locator('h3').allTextContents();
     const visibleEntityKinds=await allEntityCards.locator('.entity-kind').allTextContents();
     const presentationOccurrences=new Map();
-    for(const [entityKind,presentations] of [['skill',skillPresentations],['weapon',weaponPresentations]]){
-      const kindLabel=entityKind==='skill'?'技能':'武器';
-      for(const presentation of presentations){
-        const key=kindLabel+'\0'+presentation.payload.name;
+    for(const presentation of skillPresentations){
+      const key='技能\0'+presentation.payload.name;
+      const occurrence=presentationOccurrences.get(key)||0;
+      presentationOccurrences.set(key,occurrence+1);
+      const matchingIndexes=[];
+      for(let index=0;index<visibleEntityNames.length;index++)
+        if(visibleEntityNames[index]===presentation.payload.name&&visibleEntityKinds[index]==='技能')
+          matchingIndexes.push(index);
+      const cardIndex=matchingIndexes[occurrence];
+      assert.notEqual(cardIndex,undefined,
+        'The compiled skill presentation must map to its rendered entity card.');
+      const card=allEntityCards.nth(cardIndex);
+      const detailEvidence=await verifyDetailSections(card,presentation.payload.detailSections,presentation.payload.name);
+      detailSectionEvidence.push({kind:'skill',...detailEvidence});
+    }
+    const weaponsDocument=JSON.parse(expected.files.weapons.bytes.toString('utf8'));
+    const sourceWeapons=new Map(weaponsDocument.records
+      .filter(record=>record.owner==='source'&&record.kind==='weapon')
+      .map(record=>[record.recordId,record]));
+    let chainaxeCard=null;
+    for(const presentation of weaponPresentations){
+      const sourceWeapon=sourceWeapons.get(presentation.entityRef);
+      assert.ok(sourceWeapon,'The compiled weapon presentation must resolve through its Source record.');
+      if(sourceWeapon.payload&&sourceWeapon.payload.familyId==='chainaxe_p1'){
+        const view=presentation.payload.weaponView;
+        assert.ok(view&&typeof view.markLabel==='string','The chainaxe presentation must provide its own model label.');
+        const familyCard=page.locator('#content-cards .entity-card[data-family-id="chainaxe_p1"]');
+        assert.equal(await familyCard.count(),1,'The Source chainaxe family must render as one card.');
+        const tab=familyCard.locator('[role="tab"]').filter({hasText:view.markLabel});
+        assert.equal(await tab.count(),1,'Every chainaxe mark must have one matching tab.');
+        await tab.click();
+        chainaxeCard=familyCard;
+        const panel=familyCard.locator('[role="tabpanel"]');
+        renderedTextSnapshots.push(await panel.textContent());
+        const detailEvidence=await verifyDetailSections(panel,presentation.payload.detailSections,presentation.payload.name);
+        detailSectionEvidence.push({kind:'weapon',...detailEvidence});
+      }else{
+        const key='武器\0'+presentation.payload.name;
         const occurrence=presentationOccurrences.get(key)||0;
         presentationOccurrences.set(key,occurrence+1);
         const matchingIndexes=[];
         for(let index=0;index<visibleEntityNames.length;index++)
-          if(visibleEntityNames[index]===presentation.payload.name&&visibleEntityKinds[index]===kindLabel)
+          if(visibleEntityNames[index]===presentation.payload.name&&visibleEntityKinds[index]==='武器')
             matchingIndexes.push(index);
         const cardIndex=matchingIndexes[occurrence];
         assert.notEqual(cardIndex,undefined,
-          'The compiled '+entityKind+' presentation must map to its rendered entity card.');
+          'The compiled weapon presentation must map to its rendered entity card.');
         const card=allEntityCards.nth(cardIndex);
         const detailEvidence=await verifyDetailSections(card,presentation.payload.detailSections,presentation.payload.name);
-        detailSectionEvidence.push({kind:entityKind,...detailEvidence});
+        detailSectionEvidence.push({kind:'weapon',...detailEvidence});
       }
     }
-    const localizedTerms=termLocalizations(expected);
-    const renderedTermNames=await page.locator('#term-cards .entity-card h3').allTextContents();
-    for(const term of localizedTerms){
-      assert.ok(renderedTermNames.includes(term.payload.label));
-      if(typeof term.payload.definition==='string')
-        assert.ok((await page.locator('#terms-content').textContent()).includes(term.payload.definition));
+    if(chainaxeCard){
+      const defaultTab=chainaxeCard.locator('[role="tab"]').filter({hasText:'Mk IV'});
+      if(await defaultTab.count()===1) await defaultTab.click();
+      renderedTextSnapshots.push(await chainaxeCard.locator('[role="tabpanel"]').textContent());
     }
+    const localizedTerms=termLocalizations(expected);
+    const referencedTermIds=new Set();
+    for(const presentation of [...skillPresentations,...blessingPresentations,...weaponPresentations]){
+      collectTermReferences(presentation.payload.detailSections,referencedTermIds);
+      for(const option of presentation.payload.tierPresentations&&presentation.payload.tierPresentations.options||[])
+        collectTermReferences(option.detailSections,referencedTermIds);
+    }
+    const renderedTermText=renderedTextSnapshots.join('\n');
+    for(const term of localizedTerms){
+      if(!referencedTermIds.has(term.entityRef)) continue;
+      assert.ok(renderedTermText.includes(term.payload.label),
+        'A referenced localized term must render inline in its presentation.');
+      if(typeof term.payload.definition==='string')
+        assert.ok(renderedTermText.includes(term.payload.definition),
+          'The referenced term definition must render inline in its presentation.');
+    }
+    assert.equal(await page.locator('#terms-content').count(),0);
     if(transitionToR2){
       transitionEvidence.validR2Activated=true;
       await page.screenshot({path:screenshotPath,fullPage:true});

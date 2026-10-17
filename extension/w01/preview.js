@@ -14,6 +14,11 @@
     {domain:'blessings',kind:'blessing',label:'祝福'},
     {domain:'weapons',kind:'weapon',label:'武器'}
   ];
+  const CHAINAXE_FAMILY_ID='chainaxe_p1';
+  const CHAINAXE_MARKS=[
+    {sourceMarkId:'chainaxe_p1_m1',markLabel:'Mk IV'},
+    {sourceMarkId:'chainaxe_p1_m2',markLabel:'Mk XII'}
+  ];
   const state={lastActivation:null,selectedReleaseId:null};
   const byId=id=>document.getElementById(id);
   function node(tag,text,className){
@@ -45,6 +50,14 @@
     const element=byId('error-message');
     element.textContent=message||'載入失敗';
     element.hidden=false;
+  }
+  function showFailure(message){
+    clear(byId('content-cards'));
+    byId('snapshot-info').hidden=true;
+    byId('domain-content').hidden=true;
+    byId('integrity-details').hidden=true;
+    status('無法顯示已驗證的本機快照。','error');
+    showError(message);
   }
   function clearError(){
     const element=byId('error-message');
@@ -273,15 +286,120 @@
     block.append(node('p',view.note,'weapon-view-note'));
     card.append(block);
   }
+  function resolveChainaxeWeaponMarks(domain,entities){
+    const family=entities.filter(entity=>entity.payload&&entity.payload.familyId===CHAINAXE_FAMILY_ID);
+    if(family.length===0) return null;
+    if(family.length!==CHAINAXE_MARKS.length)
+      throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+    const byMarkId=new Map();
+    for(const entity of family){
+      const expected=CHAINAXE_MARKS.find(mark=>mark.sourceMarkId===entity.payload.markId);
+      if(!expected||byMarkId.has(expected.sourceMarkId))
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      const presentations=domain.records.filter(record=>record.owner==='web'&&record.kind==='presentation'&&
+        record.locale==='zh-TW'&&record.entityRef===entity.recordId);
+      if(presentations.length!==1)
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      const presentation=presentations[0];
+      const view=presentation.payload&&presentation.payload.weaponView;
+      if(!view||view.markLabel!==expected.markLabel||typeof presentation.payload.name!=='string'||
+        presentation.payload.name.length===0)
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      byMarkId.set(expected.sourceMarkId,{entity,presentation});
+    }
+    const ordered=CHAINAXE_MARKS.map(mark=>byMarkId.get(mark.sourceMarkId));
+    if(ordered.some(mark=>!mark)||ordered[0].presentation.payload.name!==ordered[1].presentation.payload.name)
+      throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+    return ordered;
+  }
+  function renderChainaxeWeaponSelector(marks,target,localizedTerms){
+    const familyId=marks[0].entity.payload.familyId;
+    const idPrefix='w01-'+familyId.replace(/[^A-Za-z0-9_-]/g,'-');
+    const card=node('article',undefined,'entity-card');
+    card.dataset.familyId=familyId;
+    card.append(node('p','武器','entity-kind'));
+    card.append(node('h3',marks[0].presentation.payload.name));
+    const tabList=node('div',undefined,'weapon-mark-tabs');
+    tabList.setAttribute('role','tablist');
+    tabList.setAttribute('aria-label','選擇武器型號');
+    const panel=node('div',undefined,'weapon-mark-panel');
+    panel.id=idPrefix+'-panel';
+    panel.setAttribute('role','tabpanel');
+    panel.setAttribute('tabindex','0');
+    const buttons=[];
+    for(let index=0;index<marks.length;index++){
+      const mark=marks[index];
+      const button=node('button',mark.presentation.payload.weaponView.markLabel,'weapon-mark-tab');
+      button.type='button';
+      button.id=idPrefix+'-tab-'+String(index);
+      button.setAttribute('role','tab');
+      button.setAttribute('aria-controls',panel.id);
+      button.setAttribute('aria-selected','false');
+      button.tabIndex=-1;
+      tabList.append(button);
+      buttons.push(button);
+    }
+    function selectMark(index){
+      const mark=marks[index];
+      for(let buttonIndex=0;buttonIndex<buttons.length;buttonIndex++){
+        const selected=buttonIndex===index;
+        buttons[buttonIndex].setAttribute('aria-selected',String(selected));
+        buttons[buttonIndex].tabIndex=selected?0:-1;
+      }
+      clear(panel);
+      panel.dataset.markId=mark.entity.payload.markId;
+      panel.setAttribute('aria-labelledby',buttons[index].id);
+      const payload=mark.presentation.payload;
+      panel.append(node('span',reviewLabel(mark.presentation),'review-chip'));
+      renderOfficial(panel,payload.official);
+      renderErrata(panel,payload.errata);
+      renderDetailSections(panel,payload.detailSections,localizedTerms);
+      renderWeaponView(panel,payload.weaponView);
+    }
+    for(let index=0;index<buttons.length;index++){
+      const button=buttons[index];
+      button.addEventListener('click',()=>selectMark(index));
+      button.addEventListener('keydown',event=>{
+        let next=-1;
+        if(event.key==='ArrowRight') next=(index+1)%buttons.length;
+        else if(event.key==='ArrowLeft') next=(index-1+buttons.length)%buttons.length;
+        else if(event.key==='Home') next=0;
+        else if(event.key==='End') next=buttons.length-1;
+        if(next<0) return;
+        event.preventDefault();
+        selectMark(next);
+        buttons[next].focus();
+      });
+    }
+    card.append(tabList,panel);
+    selectMark(0);
+    target.append(card);
+  }
   function renderEntityCards(snapshot,localizedTerms){
     const target=byId('content-cards');
     clear(target);
-    let count=0;
-    for(const config of ENTITY_DOMAINS){
+    byId('domain-content').hidden=true;
+    const domains=ENTITY_DOMAINS.map(config=>{
       const domain=snapshot.domains[config.domain];
-      if(!domain||!Array.isArray(domain.records)) continue;
+      if(!domain||!Array.isArray(domain.records)) return {config,domain:null,entities:[],chainaxeMarks:null};
       const entities=domain.records.filter(record=>record.owner==='source'&&record.kind===config.kind);
+      const chainaxeMarks=config.domain==='weapons'?resolveChainaxeWeaponMarks(domain,entities):null;
+      return {config,domain,entities,chainaxeMarks};
+    });
+    let count=0;
+    for(const {config,domain,entities,chainaxeMarks} of domains){
+      if(!domain) continue;
+      const chainaxeEntityIds=new Set(chainaxeMarks?chainaxeMarks.map(mark=>mark.entity.recordId):[]);
+      let chainaxeRendered=false;
       for(const entity of entities){
+        if(chainaxeMarks&&chainaxeEntityIds.has(entity.recordId)){
+          if(!chainaxeRendered){
+            renderChainaxeWeaponSelector(chainaxeMarks,target,localizedTerms);
+            count++;
+            chainaxeRendered=true;
+          }
+          continue;
+        }
         const presentation=domain.records.find(record=>record.owner==='web'&&record.kind==='presentation'&&
           record.entityRef===entity.recordId&&record.locale==='zh-TW');
         if(!presentation||!presentation.payload) continue;
@@ -303,25 +421,6 @@
     }
     byId('domain-content').hidden=count===0;
     if(count===0) target.append(node('p','目前沒有可顯示的技能、祝福或武器。'));
-  }
-  function renderTermCards(snapshot){
-    const target=byId('term-cards');
-    clear(target);
-    const domain=snapshot.domains.terms;
-    const localized=termLocalizations(snapshot.domains);
-    const terms=domain.records.filter(record=>record.owner==='source'&&record.kind==='term');
-    for(const term of terms){
-      const local=localized.get(term.recordId);
-      const card=node('article',undefined,'entity-card term-card');
-      card.append(node('p','術語','entity-kind'));
-      card.append(node('h3',local&&typeof local.payload.label==='string'?local.payload.label:'待補繁中詞條'));
-      card.append(node('span',local?reviewLabel(local):'待補繁中詞條','review-chip'));
-      if(local&&typeof local.payload.definition==='string')
-        card.append(node('p',local.payload.definition));
-      target.append(card);
-    }
-    byId('terms-content').hidden=terms.length===0;
-    if(terms.length===0) target.append(node('p','目前沒有可顯示的術語。'));
   }
   function renderIntegrity(snapshot){
     const list=byId('integrity-list');
@@ -392,7 +491,6 @@
     byId('snapshot-info').hidden=false;
     const terms=termLocalizations(snapshot.domains);
     renderEntityCards(snapshot,terms);
-    renderTermCards(snapshot);
     renderIntegrity(snapshot);
     status('已顯示通過驗證的本機快照。','active');
   }
@@ -429,7 +527,6 @@
       select.disabled=true;
       byId('snapshot-info').hidden=true;
       byId('domain-content').hidden=true;
-      byId('terms-content').hidden=true;
       byId('integrity-details').hidden=true;
       byId('data-status').hidden=true;
       status('本機尚無已啟用快照。可從固定 Preview 載入。','empty');
@@ -459,17 +556,17 @@
   async function init(){
     byId('preview-origin').textContent=origin;
     byId('load-preview').addEventListener('click',()=>{
-      loadPreviewPackage().catch(error=>showError(error.message));
+      loadPreviewPackage().catch(error=>showFailure(error.message));
     });
     byId('refresh-snapshot').addEventListener('click',()=>{
-      loadSnapshot(byId('active-release').value).catch(error=>showError(error.message));
+      loadSnapshot(byId('active-release').value).catch(error=>showFailure(error.message));
     });
     byId('active-release').addEventListener('change',()=>{
-      loadSnapshot(byId('active-release').value).catch(error=>showError(error.message));
+      loadSnapshot(byId('active-release').value).catch(error=>showFailure(error.message));
     });
     renderNetworkAudit([]);
     try{await refreshReleaseList();}
-    catch(error){status('無法讀取本機快照。','error');showError(error.message);}
+    catch(error){showFailure(error.message);}
   }
   window.W01Preview=Object.freeze({
     refreshReleaseList,
