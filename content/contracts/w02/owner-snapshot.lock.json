@@ -1,0 +1,94 @@
+{
+  "lockVersion": 1,
+  "owners": {
+    "source": {
+      "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+      "commit": "15f285ec3ad9314435141a18125cabfc1b3d1d19",
+      "snapshot": "source-v2-snapshot",
+      "files": [
+        {
+          "path": "content/schema/v2/source-contract.schema.json",
+          "sizeBytes": 34139,
+          "sha256": "4e413bafdd7478dda7527b3824ec36509b966343dc9f2e5e838063f80d002737"
+        },
+        {
+          "path": "content/fixtures/v2/representative-source.json",
+          "sizeBytes": 30954,
+          "sha256": "849aaa1adba8d73a8c3963de70b5af5e8d4aa9c4c55b9d69c0f74152c79b7b75"
+        },
+        {
+          "path": "scripts/content/contract-validator.mjs",
+          "sizeBytes": 61088,
+          "sha256": "7fbab2de7890e231a7c6e317f2997c1ca3939c17dc87483e927e91b6c6537aaa"
+        }
+      ]
+    },
+    "web": {
+      "repository": "https://github.com/SyuanTsai/DarkTide-Web",
+      "commit": "47e3641fb56250602144a6373e42cd9a4f7d25b1",
+      "snapshot": "web-v2-snapshot",
+      "files": [
+        {
+          "path": "content/schema/v2/shared-release.schema.json",
+          "sizeBytes": 6639,
+          "sha256": "2dd1ccc4124e66c504ff6def8de4ec035b674d6e0ecbfe3eb3c4519cb8ecbd9d"
+        },
+        {
+          "path": "scripts/content/contract-release.mjs",
+          "sizeBytes": 24311,
+          "sha256": "f2054ed33afdd6325450138202f7fbde9278f881de800959fb638db2794414d3"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/announcement-only/data/45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed/announcements.json",
+          "sizeBytes": 120,
+          "sha256": "c71e1f821d1e2ea877b61c4a7b7e65228ca9373f0077f25fecce6bbe4af031be"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/announcement-only/data/45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed/manifest.json",
+          "sizeBytes": 1114,
+          "sha256": "f5034647db509a47e1af479766458c489b31cfd623317a40f782c3a076c2e447"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/announcement-only/fixture.json",
+          "sizeBytes": 108,
+          "sha256": "a6622d7df4a1b952d10738b66acac4bf5b1281eb629d3954693ab27fb232bd7e"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/announcement-only/version.json",
+          "sizeBytes": 655,
+          "sha256": "cba64f827a43266a6662227e82b8e2edca022be5301cc115b4273645af946623"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/announcements.json",
+          "sizeBytes": 119,
+          "sha256": "f83901ed0c8152f1d1ed86fd0afaca2a946d80acffcc4ed70b48e5fbe8c74053"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/manifest.json",
+          "sizeBytes": 1531,
+          "sha256": "d56595f7a12d98ab9908bdbb998045cfe72d989af3dbdf961ccc92aa89d9b2a4"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/skills.json",
+          "sizeBytes": 43,
+          "sha256": "3e063dc8ffb76eef294ba1685f7c9d45d94cf571cfbe02ef59bcba93ef332b13"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/terms.json",
+          "sizeBytes": 62,
+          "sha256": "85262a8d13714bf407f92dfc9f0d577196e4b9c6dd79851d853f2968468c0fd8"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/fixture.json",
+          "sizeBytes": 104,
+          "sha256": "67bb46173b9e4619da88fa59dc218e64aa3145be614074ec2f01bcc664aa8c3f"
+        },
+        {
+          "path": "content/fixtures/v2/shared-release/valid/version.json",
+          "sizeBytes": 655,
+          "sha256": "431200543a9ca80e262d500b72b7a6aa9d4b26597a70edfbdc9604b6d49268e8"
+        }
+      ]
+    }
+  }
+}

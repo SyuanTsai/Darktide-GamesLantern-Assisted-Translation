@@ -11,6 +11,7 @@
     "test:w01:shared-package": "node --test tests/w01/shared-package.test.cjs",
     "test:w01:live-preview": "node --test tests/w01/live-preview.test.cjs",
     "test:w01:pending-preview": "node --test tests/w01/pending-preview-renderer.test.cjs",
+    "validate:w02:contract": "node scripts/w02/contract-conformance.mjs",
     "test:w01": "node --test tests/w01/loader.test.cjs tests/w01/build.test.cjs tests/w01/idb-local.test.cjs tests/w01/idb-integration.test.cjs tests/w01/preview-integration.test.cjs tests/w01/shared-package.test.cjs tests/w01/pending-preview-renderer.test.cjs"
   },
   "devDependencies": {

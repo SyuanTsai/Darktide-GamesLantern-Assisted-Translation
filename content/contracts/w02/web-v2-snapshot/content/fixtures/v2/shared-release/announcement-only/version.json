@@ -1,0 +1,16 @@
+{
+  "schema_version": 2,
+  "data_revision": "45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed",
+  "build_id": "3333333333333333333333333333333333333333333333333333333333333333",
+  "game_version": "1.13.2",
+  "package_kind": "published",
+  "game_releases": [
+    {
+      "game_version": "1.13.2",
+      "content_version": "1.13.2.1",
+      "data_revision": "45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed",
+      "manifest_path": "/data/45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed/manifest.json",
+      "manifest_sha256": "f5034647db509a47e1af479766458c489b31cfd623317a40f782c3a076c2e447"
+    }
+  ]
+}

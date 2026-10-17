@@ -1,0 +1,8 @@
+{
+  "fixtureOnly": true,
+  "scope": {
+    "kind": "site",
+    "id": "synthetic-site-maintenance"
+  },
+  "blocks": []
+}

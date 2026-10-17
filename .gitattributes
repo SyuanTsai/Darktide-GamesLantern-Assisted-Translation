@@ -1,0 +1,4 @@
+content/contracts/** text eol=lf
+scripts/w02/** text eol=lf
+tests/w02/** text eol=lf
+docs/contracts/** text eol=lf

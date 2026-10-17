@@ -1,0 +1,74 @@
+{
+  "contractVersion": "1.0.0",
+  "packageVersion": "0.2.30",
+  "snapshotLockSha256": "8cb4395b0bb813ba59af200127e3c52300ff590805dd95229c3168c7eaaa44fd",
+  "runtimeIntegration": false,
+  "publicationEligible": false,
+  "owners": {
+    "source": {
+      "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+      "commit": "15f285ec3ad9314435141a18125cabfc1b3d1d19",
+      "snapshot": "source-v2-snapshot"
+    },
+    "web": {
+      "repository": "https://github.com/SyuanTsai/DarkTide-Web",
+      "commit": "47e3641fb56250602144a6373e42cd9a4f7d25b1",
+      "snapshot": "web-v2-snapshot"
+    }
+  },
+  "capabilities": {
+    "knownDomains": [
+      "skills",
+      "blessings",
+      "weapons",
+      "terms",
+      "catalog",
+      "curios",
+      "perks",
+      "classifications",
+      "announcements",
+      "game-changes"
+    ],
+    "knownFeatures": [
+      "official-errata-details-v1",
+      "official-native-localizations-v1",
+      "blessing-tier-presentations-v1"
+    ],
+    "featureDependencies": {
+      "blessing-tier-presentations-v1": [
+        "official-native-localizations-v1"
+      ]
+    },
+    "runtime": {
+      "requiredDomains": [
+        "skills",
+        "blessings",
+        "weapons",
+        "terms"
+      ],
+      "supportedDomains": [
+        "skills",
+        "blessings",
+        "weapons",
+        "terms",
+        "game-changes"
+      ],
+      "domainDependencies": {
+        "skills": [
+          "terms"
+        ],
+        "blessings": [
+          "weapons",
+          "terms"
+        ],
+        "weapons": [
+          "terms"
+        ],
+        "terms": [],
+        "game-changes": [
+          "skills"
+        ]
+      }
+    }
+  }
+}
