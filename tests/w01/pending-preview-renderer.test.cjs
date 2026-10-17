@@ -26,6 +26,10 @@ function expectedWebDisplay(value,omitStaminaUnit=false){
 function encodeRoutes(routes){
   return Object.fromEntries([...routes].map(([pathname,bytes])=>[pathname,Buffer.from(bytes).toString('base64')]));
 }
+function nextContentVersion(contentVersion){
+  const [major,minor,patch]=contentVersion.split('.').map(Number);
+  return `${major}.${minor}.${patch+1}`;
+}
 function makeVersionedPendingPackage(candidate,contentVersion,transformDomainBytes=(_kind,bytes)=>bytes){
   const revision=crypto.createHash('sha256')
     .update('SYP-311 W01 local pending preview '+candidate.entry.data_revision+' '+contentVersion).digest('hex');
@@ -59,14 +63,16 @@ function makeVersionedPendingPackage(candidate,contentVersion,transformDomainByt
   return {version,manifest,entry:version.game_releases[0],routes};
 }
 
-// Scenario: Load the exact Web 0.0.16 candidate into a private unpacked extension profile, then attempt a bad update, a valid update, and rollback.
+// Scenario: Load the exact Web 0.0.17 candidate into a private unpacked extension profile, then attempt a bad update, a valid update, and rollback.
 // Purpose: Verify actual IndexedDB/service-worker integration and the weapon view rendered by preview.html without representing route-adapter bytes as live HTTPS evidence.
 test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
-  skip:!packageDirectory?'Set SYP_W01_PENDING_PACKAGE_DIR to the frozen Web 0.0.16 pending-preview package.':false
+  skip:!packageDirectory?'Set SYP_W01_PENDING_PACKAGE_DIR to the frozen Web 0.0.17 pending-preview package.':false
 },async t=>{
   const candidate=inspectSharedPackage(packageDirectory);
-  const newer=makeVersionedPendingPackage(candidate,'0.0.17');
-  const invalidChainaxe=makeVersionedPendingPackage(candidate,'0.0.18',(kind,bytes)=>{
+  const newerVersion=nextContentVersion(candidate.entry.content_version);
+  const invalidVersion=nextContentVersion(newerVersion);
+  const newer=makeVersionedPendingPackage(candidate,newerVersion);
+  const invalidChainaxe=makeVersionedPendingPackage(candidate,invalidVersion,(kind,bytes)=>{
     if(kind!=='weapons') return bytes;
     const document=JSON.parse(bytes.toString('utf8'));
     const chainaxe= document.records.find(record=>record.owner==='source'&&record.kind==='weapon'&&
@@ -136,13 +142,13 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
       routes:encodeRoutes(candidate.routes)
     });
     assert.equal(activated.packageKind,'pending-preview');
-    assert.equal(activated.contentVersion,'0.0.16');
+    assert.equal(activated.contentVersion,candidate.entry.content_version);
     assert.equal(activated.dataRevision,candidate.entry.data_revision);
     assert.equal(activated.manifestSha256,candidate.manifestSha256);
 
     await page.goto('chrome-extension://'+extensionId+'/preview.html');
-    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
-      document.getElementById('snapshot-metadata').textContent.includes('0.0.16'));
+    await page.waitForFunction(version=>document.body.dataset.w01State==='active'&&
+      document.getElementById('snapshot-metadata').textContent.includes(version),candidate.entry.content_version);
     const weaponDocument=JSON.parse(candidate.files.weapons.bytes.toString('utf8'));
     const chainaxeEntities=weaponDocument.records.filter(record=>record.owner==='source'&&record.kind==='weapon'&&
       record.payload.familyId==='chainaxe_p1');
@@ -230,7 +236,15 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
     assert.equal(await card.locator('.weapon-stat-row .comparison-value').count(),38,
       'Only the selected model’s 19 by two comparison cells should be present.');
     assert.ok((await page.locator('#snapshot-metadata').textContent()).includes('pending-preview'));
-    assert.ok((await page.locator('#data-status').textContent()).includes('待審'));
+    const statusText=await page.locator('#data-status').textContent();
+    assert.ok(statusText.includes('待審資料'));
+    assert.ok(statusText.includes('此套件含待審記錄'));
+    assert.ok(statusText.includes('已核准的 W01 範圍'));
+    assert.doesNotMatch(statusText,/代碼快照與文字版本相容性尚未核實/);
+    assert.doesNotMatch(statusText,/SYP-333|claim|action\/profile|Psyker/);
+    assert.equal(await page.locator('#data-status a').getAttribute('href'),
+      'https://syuantsai.atlassian.net/browse/SYP-333?focusedCommentId=11852');
+    assert.equal(await page.locator('#data-status a').textContent(),'W01 驗收紀錄');
     await page.screenshot({path:screenshots.chainaxes,fullPage:true});
 
     await page.locator('#game-version').fill(candidate.entry.game_version);
@@ -252,7 +266,7 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
       document.getElementById('error-message').textContent.toLowerCase().includes('hash mismatch'));
     const failed=await page.evaluate(()=>window.W01Preview.getLastActivation());
     assert.match(failed.error,/hash mismatch/);
-    assert.ok((await page.locator('#snapshot-metadata').textContent()).includes('0.0.16'));
+    assert.ok((await page.locator('#snapshot-metadata').textContent()).includes(candidate.entry.content_version));
     assert.match(await page.locator('#error-message').textContent(),/hash mismatch/);
     await page.screenshot({path:screenshots.failedUpdate,fullPage:true});
 
@@ -269,9 +283,9 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
       };
     },encodeRoutes(newer.routes));
     await page.locator('#load-preview').click();
-    await page.waitForFunction(()=>window.W01Preview&&window.W01Preview.getLastActivation()&&
+    await page.waitForFunction(version=>window.W01Preview&&window.W01Preview.getLastActivation()&&
       window.W01Preview.getLastActivation().ok===true&&
-      document.getElementById('snapshot-metadata').textContent.includes('0.0.17'));
+      document.getElementById('snapshot-metadata').textContent.includes(version),newer.entry.content_version);
     await worker.evaluate(()=>{self.fetch=self.__w01OriginalFetch;delete self.__w01OriginalFetch;});
     const rollback=await page.evaluate(input=>new Promise(resolve=>{
       chrome.runtime.sendMessage({type:'W01_ROLLBACK',gameReleaseId:input.gameReleaseId,
@@ -279,10 +293,10 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
     }),{gameReleaseId:candidate.manifest.gameReleaseId,dataRevision:candidate.entry.data_revision});
     assert.equal(rollback.ok,true);
     assert.equal(rollback.active.packageKind,'pending-preview');
-    assert.equal(rollback.active.contentVersion,'0.0.16');
+    assert.equal(rollback.active.contentVersion,candidate.entry.content_version);
     await page.reload();
-    await page.waitForFunction(()=>document.body.dataset.w01State==='active'&&
-      document.getElementById('snapshot-metadata').textContent.includes('0.0.16'));
+    await page.waitForFunction(version=>document.body.dataset.w01State==='active'&&
+      document.getElementById('snapshot-metadata').textContent.includes(version),candidate.entry.content_version);
     assert.equal(await page.locator('#content-cards [data-family-id="chainaxe_p1"] [role="tabpanel"] .weapon-stat-row').count(),19);
     await page.screenshot({path:screenshots.rollback,fullPage:true});
 
@@ -313,7 +327,7 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
       '/'+malformedWeaponMetadata.path);
     assert.equal(sha256(malformedWeaponBytes),malformedWeaponMetadata.sha256,
       'The malformed weapon document must match its manifest hash.');
-    assert.ok((await page.locator('#snapshot-metadata').textContent()).includes('0.0.18'));
+    assert.ok((await page.locator('#snapshot-metadata').textContent()).includes(invalidChainaxe.entry.content_version));
     assert.equal(await page.locator('#content-cards [data-family-id="chainaxe_p1"]').count(),0,
       'An incomplete chainaxe family must not render as a successful family card.');
     assert.equal(await page.locator('#content-cards [data-entity-ref^="darktide:weapon:chainaxe:"]').count(),0,
@@ -337,7 +351,9 @@ test('InterT15_PendingPreviewCandidateRendersChainaxeRowsAndPreservesRollback',{
       domainHashes:Object.fromEntries(REQUIRED_KINDS.map(kind=>[kind,candidate.files[kind].sha256])),
       chainaxeRowsPerMark:{mkIV:19,mkXII:19},
       singleAndMultiTargetSegmentsRendered:true,
-      failedUpdateRetained016:true,validLocalUpdateDisplayed017:true,rollbackRestored016:true,
+      failedUpdatePreservedCandidateVersion:candidate.entry.content_version,
+      validLocalUpdateDisplayedVersion:newer.entry.content_version,
+      rollbackRestoredCandidateVersion:candidate.entry.content_version,
       hashValidMalformedChainaxeRejected:true,
       candidateDataLoadedViaLocalRouteAdapter:true,liveHttpsRequests:0,
       browserRequestOrigins:[...new Set(browserRequestOrigins)],consoleErrors,pageErrors,screenshots

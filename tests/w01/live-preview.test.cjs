@@ -364,8 +364,13 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
     await page.waitForFunction(()=>document.body.dataset.w01State==='active');
     const statusText=await page.locator('#data-status').textContent();
     assert.ok(statusText.includes(expected.packageKind==='fixture'?'合成 Fixture 資料':'待審資料'));
-    if(expected.packageKind==='pending-preview')
-      assert.ok(statusText.includes('代碼快照與文字版本相容性尚未核實'));
+    if(expected.packageKind==='pending-preview'){
+      assert.ok(statusText.includes('此套件含待審記錄'));
+      assert.ok(statusText.includes('已核准的 W01 範圍'));
+      assert.ok(statusText.includes('W01 驗收紀錄'));
+      assert.doesNotMatch(statusText,/代碼快照與文字版本相容性尚未核實/);
+      assert.doesNotMatch(statusText,/SYP-333|claim|action\/profile|Psyker/);
+    }
     assert.ok((await page.locator('#snapshot-info').textContent()).includes(expected.entry.data_revision));
 
     const contentCards=await page.locator('#content-cards').textContent();

@@ -15,6 +15,7 @@
     {domain:'weapons',kind:'weapon',label:'武器'}
   ];
   const CHAINAXE_FAMILY_ID='chainaxe_p1';
+  const W01_APPROVAL_URL='https://syuantsai.atlassian.net/browse/SYP-333?focusedCommentId=11852';
   const CHAINAXE_MARKS=[
     {sourceMarkId:'chainaxe_p1_m1',markLabel:'Mk IV'},
     {sourceMarkId:'chainaxe_p1_m2',markLabel:'Mk XII'}
@@ -463,7 +464,14 @@
       notice.classList.add('fixture-notice');
     }else if(manifest.publicationEligible!==true){
       notice.append(node('strong','待審資料'));
-      notice.append(node('span',' 代碼快照與文字版本相容性尚未核實；此預覽不代表發布內容。'));
+      notice.append(node('span',hasPending
+        ?' 此套件含待審記錄；已核准的 W01 範圍與限制以驗收紀錄為準。'
+        :' 此套件尚未取得正式發布資格；已核准的 W01 範圍與限制以驗收紀錄為準。'));
+      const approvalLink=node('a','W01 驗收紀錄');
+      approvalLink.setAttribute('href',W01_APPROVAL_URL);
+      approvalLink.setAttribute('target','_blank');
+      approvalLink.setAttribute('rel','noopener noreferrer');
+      notice.append(approvalLink);
       notice.classList.add('fixture-notice');
     }else{
       notice.classList.remove('fixture-notice');
@@ -471,7 +479,8 @@
     if(hasPending||manifest.publicationEligible!==true){
       if(manifest.fixtureOnly===true)
         notice.append(node('p','內容含待審記錄或未通過發布條件；保留來源文字與勘誤的分離呈現。'));
-      else notice.append(node('p','內容含待審記錄；官方原文與獨立勘誤分開顯示。'));
+      else if(manifest.publicationEligible===true)
+        notice.append(node('p','內容含待審記錄；官方原文與獨立勘誤分開顯示。'));
       notice.classList.add('pending-notice');
     }else{
       notice.classList.remove('pending-notice');
