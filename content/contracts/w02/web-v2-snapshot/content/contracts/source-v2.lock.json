@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "1.0.0",
+  "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+  "commit": "15f285ec3ad9314435141a18125cabfc1b3d1d19",
+  "schemaId": "https://github.com/SyuanTsai/DarkTide-Source-Data/content/schema/v2/source-contract.schema.json",
+  "files": {
+    "schema": {
+      "path": "content/schema/v2/source-contract.schema.json",
+      "sha256": "4e413bafdd7478dda7527b3824ec36509b966343dc9f2e5e838063f80d002737"
+    },
+    "fixture": {
+      "path": "content/fixtures/v2/representative-source.json",
+      "sha256": "849aaa1adba8d73a8c3963de70b5af5e8d4aa9c4c55b9d69c0f74152c79b7b75"
+    },
+    "validator": {
+      "path": "scripts/content/contract-validator.mjs",
+      "sha256": "7fbab2de7890e231a7c6e317f2997c1ca3939c17dc87483e927e91b6c6537aaa"
+    }
+  }
+}

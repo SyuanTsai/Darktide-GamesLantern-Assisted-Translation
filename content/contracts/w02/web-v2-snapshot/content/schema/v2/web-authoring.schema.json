@@ -1,0 +1,451 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:darktide-web:web-authoring:2.0.0",
+  "title": "Darktide Web-owned authoring contract",
+  "description": "Web-owned official excerpts, faithful zh-TW wording, errata, presentation, announcements, and game-change summaries. Source mechanics remain pinned and Source-owned.",
+  "oneOf": [
+    { "$ref": "#/$defs/contract" },
+    { "$ref": "#/$defs/officialInputSnapshot" }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "gitCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "stableId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9:._-]{1,127}$" },
+    "gameReleaseId": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$" },
+    "text": { "type": "string", "minLength": 1, "maxLength": 10000 },
+    "sourceRecordKind": {
+      "type": "string",
+      "enum": [
+        "skill", "blessing", "blessing-variant", "weapon", "attack-profile", "stat-definition",
+        "stat-curve", "damage-profile", "armor-class", "target-profile", "modifier-rule", "claim",
+        "evidence", "term", "catalog", "curio", "perk", "classification", "game-change",
+        "release-compatibility"
+      ]
+    },
+    "recordRef": {
+      "type": "object",
+      "required": [ "recordId", "gameReleaseId", "kind" ],
+      "properties": {
+        "recordId": { "$ref": "#/$defs/stableId" },
+        "gameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "kind": { "$ref": "#/$defs/sourceRecordKind" },
+        "compatibilityRef": { "$ref": "#/$defs/compatibilityRef" }
+      },
+      "additionalProperties": false
+    },
+    "compatibilityRef": {
+      "type": "object",
+      "required": [ "recordId", "gameReleaseId", "kind" ],
+      "properties": {
+        "recordId": { "$ref": "#/$defs/stableId" },
+        "gameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "kind": { "const": "release-compatibility" }
+      },
+      "additionalProperties": false
+    },
+    "sourcePin": {
+      "type": "object",
+      "required": [ "repository", "commit", "schemaId", "schemaSha256", "fixtureSha256", "validatorSha256" ],
+      "properties": {
+        "repository": { "const": "https://github.com/SyuanTsai/DarkTide-Source-Data" },
+        "commit": { "$ref": "#/$defs/gitCommit" },
+        "schemaId": { "const": "https://github.com/SyuanTsai/DarkTide-Source-Data/content/schema/v2/source-contract.schema.json" },
+        "schemaSha256": { "$ref": "#/$defs/sha256" },
+        "fixtureSha256": { "$ref": "#/$defs/sha256" },
+        "validatorSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "textSegment": {
+      "type": "object",
+      "required": [ "segmentId", "kind", "text", "sha256" ],
+      "properties": {
+        "segmentId": { "$ref": "#/$defs/stableId" },
+        "kind": { "const": "text" },
+        "text": { "type": "string" },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "parameterSegment": {
+      "type": "object",
+      "required": [ "segmentId", "kind", "parameterId", "token", "sha256" ],
+      "properties": {
+        "segmentId": { "$ref": "#/$defs/stableId" },
+        "kind": { "const": "parameter" },
+        "parameterId": { "$ref": "#/$defs/stableId" },
+        "token": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "officialSegment": {
+      "oneOf": [
+        { "$ref": "#/$defs/textSegment" },
+        { "$ref": "#/$defs/parameterSegment" }
+      ]
+    },
+    "officialParameter": {
+      "type": "object",
+      "required": [ "parameterId", "sourceKey", "value" ],
+      "properties": {
+        "parameterId": { "$ref": "#/$defs/stableId" },
+        "sourceKey": { "$ref": "#/$defs/stableId" },
+        "value": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "officialInput": {
+      "type": "object",
+      "required": [
+        "officialSourceId", "entityRef", "origin", "sourceLocale", "resource", "key", "occurrence",
+        "sourceText", "sourceTextSha256", "segments", "params", "resolvedText", "resolvedTextSha256"
+      ],
+      "properties": {
+        "officialSourceId": { "$ref": "#/$defs/stableId" },
+        "entityRef": { "$ref": "#/$defs/recordRef" },
+        "origin": { "enum": [ "game-localization", "official-patch-notes", "official-ui" ] },
+        "sourceLocale": { "type": "string", "minLength": 2, "maxLength": 35 },
+        "resource": { "$ref": "#/$defs/text" },
+        "key": { "$ref": "#/$defs/stableId" },
+        "occurrence": { "type": "integer", "minimum": 0 },
+        "sourceText": { "type": "string" },
+        "sourceTextSha256": { "$ref": "#/$defs/sha256" },
+        "segments": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/officialSegment" } },
+        "params": { "type": "array", "items": { "$ref": "#/$defs/officialParameter" } },
+        "resolvedText": { "type": "string" },
+        "resolvedTextSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "officialInputSnapshot": {
+      "type": "object",
+      "required": [ "schemaVersion", "fixtureOnly", "publicationEligible", "sources" ],
+      "properties": {
+        "schemaVersion": { "const": "1.0.0" },
+        "fixtureOnly": { "const": true },
+        "publicationEligible": { "const": false },
+        "sources": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/officialInput" } }
+      },
+      "additionalProperties": false
+    },
+    "faithfulTranslation": {
+      "type": "object",
+      "required": [ "origin", "sourceId", "locale", "text", "textSha256" ],
+      "properties": {
+        "origin": { "const": "faithful-translation" },
+        "sourceId": { "$ref": "#/$defs/stableId" },
+        "locale": { "const": "zh-TW" },
+        "text": { "$ref": "#/$defs/text" },
+        "textSha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "errata": {
+      "type": "object",
+      "required": [ "errataId", "anchor", "context", "claimRefs", "evidenceRefs", "text" ],
+      "properties": {
+        "errataId": { "$ref": "#/$defs/stableId" },
+        "anchor": {
+          "type": "object",
+          "required": [ "officialSourceId", "segmentId", "segmentSha256" ],
+          "properties": {
+            "officialSourceId": { "$ref": "#/$defs/stableId" },
+            "segmentId": { "$ref": "#/$defs/stableId" },
+            "segmentSha256": { "$ref": "#/$defs/sha256" }
+          },
+          "additionalProperties": false
+        },
+        "context": {
+          "type": "object",
+          "required": [ "description", "refs" ],
+          "properties": {
+            "description": { "$ref": "#/$defs/text" },
+            "refs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/recordRef" } }
+          },
+          "additionalProperties": false
+        },
+        "claimRefs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/recordRef" } },
+        "evidenceRefs": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/recordRef" } },
+        "text": { "$ref": "#/$defs/text" }
+      },
+      "additionalProperties": false
+    },
+    "detailItem": {
+      "type": "object",
+      "required": [ "itemId", "text", "claimRefs", "termRefs" ],
+      "properties": {
+        "itemId": { "$ref": "#/$defs/stableId" },
+        "text": { "$ref": "#/$defs/text" },
+        "claimRefs": { "type": "array", "items": { "$ref": "#/$defs/recordRef" } },
+        "termRefs": { "type": "array", "items": { "$ref": "#/$defs/recordRef" } }
+      },
+      "additionalProperties": false
+    },
+    "detailSection": {
+      "type": "object",
+      "required": [ "sectionId", "items" ],
+      "properties": {
+        "sectionId": { "enum": [ "effects", "conditions", "calculation", "notes", "extra" ] },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/detailItem" } }
+      },
+      "additionalProperties": false
+    },
+    "tierApplicability": {
+      "type": "object",
+      "required": [ "variantRef", "tiers" ],
+      "properties": {
+        "variantRef": { "$ref": "#/$defs/recordRef" },
+        "tiers": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "integer", "minimum": 1, "maximum": 10 } }
+      },
+      "additionalProperties": false
+    },
+    "presentationEntityRef": {
+      "type": "object",
+      "required": [ "recordId", "gameReleaseId", "kind" ],
+      "properties": {
+        "recordId": { "$ref": "#/$defs/stableId" },
+        "gameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "kind": { "enum": [ "skill", "blessing", "weapon", "catalog", "curio", "perk", "classification" ] }
+      },
+      "additionalProperties": false
+    },
+    "presentation": {
+      "type": "object",
+      "required": [
+        "authoringId", "entityRef", "locale", "name", "official", "faithfulTranslation", "errata",
+        "detailSections", "tierApplicability"
+      ],
+      "properties": {
+        "authoringId": { "$ref": "#/$defs/stableId" },
+        "entityRef": { "$ref": "#/$defs/presentationEntityRef" },
+        "locale": { "const": "zh-TW" },
+        "name": { "$ref": "#/$defs/text" },
+        "official": { "$ref": "#/$defs/officialInput" },
+        "faithfulTranslation": { "$ref": "#/$defs/faithfulTranslation" },
+        "errata": { "type": "array", "items": { "$ref": "#/$defs/errata" } },
+        "detailSections": { "type": "array", "maxItems": 5, "items": { "$ref": "#/$defs/detailSection" } },
+        "tierApplicability": { "type": "array", "items": { "$ref": "#/$defs/tierApplicability" } }
+      },
+      "additionalProperties": false
+    },
+    "termLocalization": {
+      "type": "object",
+      "required": [ "authoringId", "termRef", "locale", "contextKey", "label", "definition" ],
+      "properties": {
+        "authoringId": { "$ref": "#/$defs/stableId" },
+        "termRef": { "$ref": "#/$defs/recordRef" },
+        "locale": { "const": "zh-TW" },
+        "contextKey": { "$ref": "#/$defs/stableId" },
+        "label": { "$ref": "#/$defs/text" },
+        "definition": { "$ref": "#/$defs/text" }
+      },
+      "additionalProperties": false
+    },
+    "announcementBlock": {
+      "oneOf": [
+        {
+          "type": "object", "required": [ "blockId", "kind", "text" ],
+          "properties": { "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "enum": [ "heading", "paragraph" ] }, "text": { "$ref": "#/$defs/text" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": [ "blockId", "kind", "text", "href" ],
+          "properties": { "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "const": "link" }, "text": { "$ref": "#/$defs/text" }, "href": { "type": "string", "pattern": "^https://[^\\s]+$" } },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": [ "blockId", "kind", "ordered", "items" ],
+          "properties": {
+            "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "const": "list" },
+            "ordered": { "type": "boolean" },
+            "items": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/announcementListItem" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": [ "blockId", "kind", "rows" ],
+          "properties": {
+            "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "const": "table" },
+            "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/announcementTableRow" } }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": [ "blockId", "kind", "assetRef", "alt" ],
+          "properties": {
+            "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "const": "image" },
+            "assetRef": { "$ref": "#/$defs/assetRef" }, "alt": { "$ref": "#/$defs/text" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": [ "blockId", "kind", "label", "blocks" ],
+          "properties": {
+            "blockId": { "$ref": "#/$defs/stableId" }, "kind": { "const": "spoiler" },
+            "label": { "$ref": "#/$defs/text" },
+            "blocks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/announcementBlock" } }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "announcementListItem": {
+      "type": "object", "required": [ "blockId", "text" ],
+      "properties": { "blockId": { "$ref": "#/$defs/stableId" }, "text": { "$ref": "#/$defs/text" } },
+      "additionalProperties": false
+    },
+    "announcementTableCell": {
+      "type": "object", "required": [ "blockId", "text" ],
+      "properties": { "blockId": { "$ref": "#/$defs/stableId" }, "text": { "$ref": "#/$defs/text" } },
+      "additionalProperties": false
+    },
+    "announcementTableRow": {
+      "type": "object", "required": [ "cells" ],
+      "properties": { "cells": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/announcementTableCell" } } },
+      "additionalProperties": false
+    },
+    "assetRef": {
+      "type": "object", "required": [ "assetId" ],
+      "properties": { "assetId": { "$ref": "#/$defs/stableId" } },
+      "additionalProperties": false
+    },
+    "assetMetadata": {
+      "type": "object",
+      "required": [ "assetId", "mediaType", "alt", "sourceUri", "sha256", "sizeBytes" ],
+      "properties": {
+        "assetId": { "$ref": "#/$defs/stableId" },
+        "mediaType": { "enum": [ "image/avif", "image/gif", "image/jpeg", "image/png", "image/webp" ] },
+        "alt": { "$ref": "#/$defs/text" },
+        "sourceUri": { "type": "string", "pattern": "^https://[^\\s]+$" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    "announcement": {
+      "type": "object",
+      "required": [ "announcementId", "scope", "publishedOn", "revision", "source", "blocks", "assets" ],
+      "properties": {
+        "announcementId": { "$ref": "#/$defs/stableId" },
+        "scope": { "enum": [ "site", "gameplay" ] },
+        "gameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "publishedOn": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "revision": { "type": "integer", "minimum": 1 },
+        "source": {
+          "type": "object", "required": [ "kind", "locator", "sha256" ],
+          "properties": { "kind": { "enum": [ "site-owner", "official-game-source" ] }, "locator": { "$ref": "#/$defs/text" }, "sha256": { "$ref": "#/$defs/sha256" } },
+          "additionalProperties": false
+        },
+        "blocks": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/announcementBlock" } },
+        "assets": { "type": "array", "items": { "$ref": "#/$defs/assetMetadata" } }
+      },
+      "allOf": [
+        { "if": { "properties": { "scope": { "const": "gameplay" } }, "required": [ "scope" ] }, "then": { "required": [ "gameReleaseId" ] }, "else": { "not": { "required": [ "gameReleaseId" ] } } }
+      ],
+      "additionalProperties": false
+    },
+    "localizedSummary": {
+      "type": "object",
+      "required": [ "locale", "text", "textSha256" ],
+      "properties": { "locale": { "const": "zh-TW" }, "text": { "$ref": "#/$defs/text" }, "textSha256": { "$ref": "#/$defs/sha256" } },
+      "additionalProperties": false
+    },
+    "gameChange": {
+      "type": "object",
+      "required": [ "changeId", "owner", "changeKind", "sourceRef", "summary", "fieldSummaries" ],
+      "properties": {
+        "changeId": { "$ref": "#/$defs/stableId" },
+        "owner": { "const": "source" },
+        "changeKind": { "const": "source-technical" },
+        "sourceRef": { "$ref": "#/$defs/recordRef" },
+        "summary": { "$ref": "#/$defs/localizedSummary" },
+        "fieldSummaries": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object", "required": [ "field", "summary" ],
+            "properties": { "field": { "$ref": "#/$defs/stableId" }, "summary": { "$ref": "#/$defs/text" } },
+            "additionalProperties": false
+          }
+        },
+        "supersedesChangeId": { "$ref": "#/$defs/stableId" }
+      },
+      "additionalProperties": false
+    },
+    "officialTextChange": {
+      "type": "object",
+      "required": [
+        "changeId", "owner", "changeKind", "operation", "entityRef", "fromGameReleaseId", "toGameReleaseId",
+        "fromOfficialSourceId", "toOfficialSourceId", "summary"
+      ],
+      "properties": {
+        "changeId": { "$ref": "#/$defs/stableId" },
+        "owner": { "const": "web" },
+        "changeKind": { "const": "official-text" },
+        "operation": { "enum": [ "modified", "correction" ] },
+        "entityRef": { "$ref": "#/$defs/presentationEntityRef" },
+        "fromGameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "toGameReleaseId": { "$ref": "#/$defs/gameReleaseId" },
+        "fromOfficialSourceId": { "$ref": "#/$defs/stableId" },
+        "toOfficialSourceId": { "$ref": "#/$defs/stableId" },
+        "summary": { "$ref": "#/$defs/localizedSummary" },
+        "supersedesChangeId": { "$ref": "#/$defs/stableId" }
+      },
+      "additionalProperties": false
+    },
+    "reviewDimension": { "enum": [ "official", "translation", "errata", "content", "context", "identity", "announcement", "game-change" ] },
+    "reviewOwnerKind": { "enum": [ "presentation", "term-localization", "announcement", "game-change", "official-text-change" ] },
+    "reviewTarget": {
+      "type": "object",
+      "required": [ "targetId", "ownerKind", "ownerId", "fieldPath", "dimension" ],
+      "properties": {
+        "targetId": { "$ref": "#/$defs/stableId" },
+        "ownerKind": { "$ref": "#/$defs/reviewOwnerKind" },
+        "ownerId": { "$ref": "#/$defs/stableId" },
+        "fieldPath": { "type": "string", "pattern": "^/" },
+        "dimension": { "$ref": "#/$defs/reviewDimension" }
+      },
+      "additionalProperties": false
+    },
+    "reviewReceipt": {
+      "type": "object",
+      "required": [ "targetId", "targetDigest", "dependenciesDigest", "decision", "reviewer", "reviewedAt" ],
+      "properties": {
+        "targetId": { "$ref": "#/$defs/stableId" },
+        "targetDigest": { "$ref": "#/$defs/sha256" },
+        "dependenciesDigest": { "$ref": "#/$defs/sha256" },
+        "decision": { "enum": [ "approved", "rejected" ] },
+        "reviewer": {
+          "type": "object", "required": [ "kind", "id" ],
+          "properties": { "kind": { "const": "human" }, "id": { "$ref": "#/$defs/text" } },
+          "additionalProperties": false
+        },
+        "reviewedAt": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]+)?Z$" }
+      },
+      "additionalProperties": false
+    },
+    "contract": {
+      "type": "object",
+      "required": [
+        "schemaVersion", "contractKind", "fixtureOnly", "publicationEligible", "sourcePin", "officialInputsSha256",
+        "presentations", "termLocalizations", "announcements", "gameChanges", "officialTextChanges", "reviewTargets", "reviewReceipts"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "2.0.0" },
+        "contractKind": { "const": "web-authoring" },
+        "fixtureOnly": { "type": "boolean" },
+        "publicationEligible": { "const": false },
+        "sourcePin": { "$ref": "#/$defs/sourcePin" },
+        "officialInputsSha256": { "$ref": "#/$defs/sha256" },
+        "presentations": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/presentation" } },
+        "termLocalizations": { "type": "array", "items": { "$ref": "#/$defs/termLocalization" } },
+        "announcements": { "type": "array", "items": { "$ref": "#/$defs/announcement" } },
+        "gameChanges": { "type": "array", "items": { "$ref": "#/$defs/gameChange" } },
+        "officialTextChanges": { "type": "array", "items": { "$ref": "#/$defs/officialTextChange" } },
+        "reviewTargets": { "type": "array", "items": { "$ref": "#/$defs/reviewTarget" } },
+        "reviewReceipts": { "type": "array", "items": { "$ref": "#/$defs/reviewReceipt" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -51,6 +51,11 @@ async function importWebOwner() {
   return import(pathToFileURL(validator).href);
 }
 
+async function importWebAuthoringOwner() {
+  const validator = path.join(webRoot, 'scripts/content/contract-authoring.mjs');
+  return import(pathToFileURL(validator).href);
+}
+
 function webFixturePath(name) {
   return path.join(webRoot, 'content/fixtures/v2/shared-release', name);
 }
@@ -76,6 +81,32 @@ test('UnitT00_ValidatesPinnedOwnerContractsWithoutGrantingRuntimeOrPublication',
     'official-native-localizations-v1',
     'blessing-tier-presentations-v1'
   ]);
+  assert.equal(result.owners.web.commit, '2816042d4a7380288ac8e73d1058a8accfe5687b');
+  assert.equal(result.owners.web.files, 21);
+  assert.equal(result.web.authoring.valid, true);
+  assert.equal(result.web.authoring.fixtureOnly, true);
+  assert.equal(result.web.authoring.publicationEligible, false);
+  assert.equal(result.web.authoring.presentationCount, 8);
+  assert.equal(result.web.authoring.officialInputCount, 8);
+  assert.equal(result.web.authoring.sourcePin.commit, '15f285ec3ad9314435141a18125cabfc1b3d1d19');
+  assert.equal(result.web.authoring.sourceCacheMatchesPinnedOwner, true);
+  assert.deepEqual(result.sharedSourceBytes, [
+    {
+      path: 'content/schema/v2/source-contract.schema.json',
+      sizeBytes: 34139,
+      sha256: '4e413bafdd7478dda7527b3824ec36509b966343dc9f2e5e838063f80d002737'
+    },
+    {
+      path: 'content/fixtures/v2/representative-source.json',
+      sizeBytes: 30954,
+      sha256: '849aaa1adba8d73a8c3963de70b5af5e8d4aa9c4c55b9d69c0f74152c79b7b75'
+    },
+    {
+      path: 'scripts/content/contract-validator.mjs',
+      sizeBytes: 61088,
+      sha256: '7fbab2de7890e231a7c6e317f2997c1ca3939c17dc87483e927e91b6c6537aaa'
+    }
+  ]);
   assert.equal(result.web.fixtures.find((fixture) => fixture.name === 'valid').domainFilesChecked, 3);
   assert.equal(result.web.fixtures.find((fixture) => fixture.name === 'announcement-only').domainFilesChecked, 1);
 });
@@ -88,7 +119,14 @@ test('UnitT10_RejectsTamperedPinnedSchemasValidatorsFixturesAndMixedOwnerBytes',
     ['Source fixture', 'source-v2-snapshot/content/fixtures/v2/representative-source.json'],
     ['Source validator', 'source-v2-snapshot/scripts/content/contract-validator.mjs'],
     ['Web schema', 'web-v2-snapshot/content/schema/v2/shared-release.schema.json'],
+    ['Web authoring schema', 'web-v2-snapshot/content/schema/v2/web-authoring.schema.json'],
     ['Web validator', 'web-v2-snapshot/scripts/content/contract-release.mjs'],
+    ['Web authoring validator', 'web-v2-snapshot/scripts/content/contract-authoring.mjs'],
+    ['Web authoring representative', 'web-v2-snapshot/content/fixtures/v2/web-authoring/representative.json'],
+    ['official input snapshot', 'web-v2-snapshot/content/fixtures/v2/web-authoring/official-inputs.json'],
+    ['Web Source lock', 'web-v2-snapshot/content/contracts/source-v2.lock.json'],
+    ['Web authoring lock', 'web-v2-snapshot/content/contracts/web-authoring.lock.json'],
+    ['nested Source cache', 'web-v2-snapshot/content/contracts/source-v2-snapshot/scripts/content/contract-validator.mjs'],
     ['Web manifest', 'web-v2-snapshot/content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/manifest.json'],
     ['Web domain', 'web-v2-snapshot/content/fixtures/v2/shared-release/valid/data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/skills.json']
   ];
@@ -115,6 +153,53 @@ test('UnitT10_RejectsTamperedPinnedSchemasValidatorsFixturesAndMixedOwnerBytes',
   } finally {
     removeRepoCopy(mixedRoot);
   }
+});
+
+test('UnitT15_WebAuthoringRejectsTypedRefOfficialInputAndMixedReleaseMismatches', async () => {
+  // Scenario: Given the pinned Web authoring fixture and its real Source and official-input dependencies.
+  // Purpose: Prove typed references, exact official bytes, Source pins, and release identities are checked by the owner validator.
+  const authoring = await importWebAuthoringOwner();
+  const inputs = await authoring.loadWebAuthoringInputs({ repoRoot: webRoot });
+  const baseline = authoring.validateWebAuthoring(inputs.authoring, inputs);
+  assert.equal(baseline.valid, true, JSON.stringify(baseline.issues));
+  assert.equal(baseline.publicationEligible, false);
+
+  const dangling = structuredClone(inputs.authoring);
+  const item = dangling.presentations.flatMap(presentation =>
+    presentation.detailSections.flatMap(section => section.items))
+    .find(candidate => candidate.claimRefs.length > 0);
+  assert.ok(item);
+  item.claimRefs[0].recordId = 'fixture:missing:claim';
+  const danglingResult = authoring.validateWebAuthoring(dangling, inputs);
+  assert.equal(danglingResult.valid, false);
+  assert.ok(danglingResult.issues.some(issue => issue.code === 'dangling-ref'));
+
+  const rewrittenOfficial = structuredClone(inputs.authoring);
+  const weapon = rewrittenOfficial.presentations.find(item => item.authoringId === 'fixture:presentation:weapon-r1');
+  weapon.official.sourceText = 'Rewritten synthetic source string.';
+  const officialResult = authoring.validateWebAuthoring(rewrittenOfficial, inputs);
+  assert.equal(officialResult.valid, false);
+  assert.ok(officialResult.issues.some(issue => issue.code === 'fixed-official-input'));
+
+  const mixedRelease = structuredClone(inputs.authoring);
+  mixedRelease.presentations.find(item => item.authoringId === 'fixture:presentation:weapon-r1')
+    .entityRef.gameReleaseId = 'fixture-r2';
+  const mixedResult = authoring.validateWebAuthoring(mixedRelease, inputs);
+  assert.equal(mixedResult.valid, false);
+  assert.ok(mixedResult.issues.some(issue => issue.code === 'official-owner'));
+  assert.ok(mixedResult.issues.some(issue => issue.code === 'cross-release-ref'));
+
+  const wrongSourcePin = structuredClone(inputs.authoring);
+  wrongSourcePin.sourcePin.commit = 'f'.repeat(40);
+  const pinResult = authoring.validateWebAuthoring(wrongSourcePin, inputs);
+  assert.equal(pinResult.valid, false);
+  assert.ok(pinResult.issues.some(issue => issue.code === 'source-pin'));
+
+  const wrongOfficialDigest = structuredClone(inputs.authoring);
+  wrongOfficialDigest.officialInputsSha256 = 'f'.repeat(64);
+  const digestResult = authoring.validateWebAuthoring(wrongOfficialDigest, inputs);
+  assert.equal(digestResult.valid, false);
+  assert.ok(digestResult.issues.some(issue => issue.code === 'official-input-pin'));
 });
 
 test('UnitT20_RejectsMissingExtraAndOutOfBoundsSnapshotFiles', async () => {

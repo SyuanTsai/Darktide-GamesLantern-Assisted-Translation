@@ -10,7 +10,7 @@ const CONTRACT_RELATIVE = 'content/contracts/w02/dev-capability.json';
 const LOCK_RELATIVE = 'content/contracts/w02/owner-snapshot.lock.json';
 const SOURCE_SNAPSHOT = 'source-v2-snapshot';
 const WEB_SNAPSHOT = 'web-v2-snapshot';
-const PINNED_LOCK_SHA256 = '8cb4395b0bb813ba59af200127e3c52300ff590805dd95229c3168c7eaaa44fd';
+const PINNED_LOCK_SHA256 = '90c13714911497e9c757e8402b3929a1c46c2527053842e83010cec279dcb0b9';
 const MAX_OWNER_FILES = 32;
 const MAX_OWNER_FILE_BYTES = 256 * 1024;
 const MAX_OWNER_TOTAL_BYTES = 1024 * 1024;
@@ -181,7 +181,7 @@ function validateContract(contract, lock, packageJson, lockBytes) {
     },
     web: {
       repository: 'https://github.com/SyuanTsai/DarkTide-Web',
-      commit: '47e3641fb56250602144a6373e42cd9a4f7d25b1',
+      commit: '2816042d4a7380288ac8e73d1058a8accfe5687b',
       snapshot: WEB_SNAPSHOT
     }
   };
@@ -211,7 +211,7 @@ function validateContract(contract, lock, packageJson, lockBytes) {
       totalBytes += file.sizeBytes;
     }
     if (totalBytes > MAX_OWNER_TOTAL_BYTES) fail('owner snapshot exceeds the bounded size');
-    const expectedCount = ownerName === 'source' ? 3 : 12;
+    const expectedCount = ownerName === 'source' ? 3 : 21;
     if (lock.owners[ownerName].files.length !== expectedCount) {
       fail('owner snapshot file count is incomplete: ' + ownerName);
     }
@@ -425,6 +425,17 @@ async function runW02Conformance({
     fail('pinned Source owner fixture is invalid or unexpectedly publication-eligible');
   }
 
+  const sharedSourceBytes = [];
+  for (const file of sourceOwner.files) {
+    const topLevelBytes = readRegularFile(sourceSnapshotRoot, file.path, 'Source owner snapshot file');
+    const nestedSourcePath = 'content/contracts/source-v2-snapshot/' + file.path;
+    const nestedBytes = readRegularFile(webSnapshotRoot, nestedSourcePath, 'Web nested Source cache file');
+    if (!topLevelBytes.equals(nestedBytes)) {
+      fail('Web nested Source cache differs from the pinned Source owner bytes: ' + file.path);
+    }
+    sharedSourceBytes.push({ path: file.path, sizeBytes: file.sizeBytes, sha256: file.sha256 });
+  }
+
   const webValidatorPath = safeChildPath(
     webSnapshotRoot, 'scripts/content/contract-release.mjs', 'Web validator');
   const webValidator = await import(pathToFileURL(webValidatorPath).href);
@@ -438,6 +449,57 @@ async function runW02Conformance({
       !sameArray(contract.capabilities.knownFeatures, webValidator.REQUIRED_FEATURES)) {
     fail('W02 known domain or feature metadata differs from the pinned Web schema and validator');
   }
+
+  const authoringSchema = parseJsonBytes(readRegularFile(webSnapshotRoot,
+    'content/schema/v2/web-authoring.schema.json', 'Web authoring schema'), 'Web authoring schema');
+  const authoringValidatorPath = safeChildPath(
+    webSnapshotRoot, 'scripts/content/contract-authoring.mjs', 'Web authoring validator');
+  const authoringValidator = await import(pathToFileURL(authoringValidatorPath).href);
+  if (authoringValidator.assertWebAuthoringSchemaParity(authoringSchema) !== true) {
+    fail('pinned Web authoring schema and validator are not in parity');
+  }
+  const authoringInputs = await authoringValidator.loadWebAuthoringInputs({ repoRoot: webSnapshotRoot });
+  const sourceFilesByPath = Object.fromEntries(sourceOwner.files.map(file => [file.path, file]));
+  const expectedSourceLockFiles = {
+    schema: {
+      path: 'content/schema/v2/source-contract.schema.json',
+      sha256: sourceFilesByPath['content/schema/v2/source-contract.schema.json'].sha256
+    },
+    fixture: {
+      path: 'content/fixtures/v2/representative-source.json',
+      sha256: sourceFilesByPath['content/fixtures/v2/representative-source.json'].sha256
+    },
+    validator: {
+      path: 'scripts/content/contract-validator.mjs',
+      sha256: sourceFilesByPath['scripts/content/contract-validator.mjs'].sha256
+    }
+  };
+  if (authoringInputs.sourceLock.repository !== sourceOwner.repository ||
+      authoringInputs.sourceLock.commit !== sourceOwner.commit ||
+      authoringInputs.sourceLock.schemaId !== sourceValidator.CONTRACT_SCHEMA_ID ||
+      !sameObject(authoringInputs.sourceLock.files, expectedSourceLockFiles)) {
+    fail('Web authoring Source lock does not match the fixed Source owner pins');
+  }
+  const expectedAuthoringSourcePin = {
+    repository: sourceOwner.repository,
+    commit: sourceOwner.commit,
+    schemaId: sourceValidator.CONTRACT_SCHEMA_ID,
+    schemaSha256: expectedSourceLockFiles.schema.sha256,
+    fixtureSha256: expectedSourceLockFiles.fixture.sha256,
+    validatorSha256: expectedSourceLockFiles.validator.sha256
+  };
+  if (!sameObject(authoringInputs.sourcePin, expectedAuthoringSourcePin)) {
+    fail('Web authoring fixture Source pin does not match the fixed Source owner bytes');
+  }
+  if (authoringInputs.authoring.fixtureOnly !== true || authoringInputs.authoring.publicationEligible !== false) {
+    fail('Web authoring representative fixture must remain synthetic and non-publishable');
+  }
+  const authoringResult = authoringValidator.validateWebAuthoring(authoringInputs.authoring, authoringInputs);
+  if (!authoringResult.valid || authoringResult.publicationEligible !== false) {
+    fail('pinned Web authoring fixture did not validate as non-publishable: ' +
+      authoringResult.issues.map(item => item.path + ': ' + item.message).join('; '));
+  }
+
   const validFixtureRoot = safeChildPath(
     webSnapshotRoot, 'content/fixtures/v2/shared-release/valid', 'Web valid release fixture');
   const validManifestPath = 'data/4e64931c542eb2558c8337a39b8866e8158cb53df92306a84ee1c04b8fbc8d0a/manifest.json';
@@ -502,8 +564,25 @@ async function runW02Conformance({
       domainValidation: 'owner-validator JSON-object, size, and SHA-256 checks',
       schemaSha256: webOwner.files.find(file => file.path === 'content/schema/v2/shared-release.schema.json').sha256,
       validatorSha256: webOwner.files.find(file => file.path === 'scripts/content/contract-release.mjs').sha256,
+      authoring: {
+        valid: true,
+        fixtureOnly: true,
+        publicationEligible: false,
+        presentationCount: authoringInputs.authoring.presentations.length,
+        termLocalizationCount: authoringInputs.authoring.termLocalizations.length,
+        announcementCount: authoringInputs.authoring.announcements.length,
+        gameChangeCount: authoringInputs.authoring.gameChanges.length,
+        officialInputCount: authoringInputs.officialInputs.sources.length,
+        sourcePin: authoringInputs.sourcePin,
+        officialInputsSha256: authoringInputs.webLock.officialInputs.sha256,
+        schemaSha256: webOwner.files.find(file => file.path === 'content/schema/v2/web-authoring.schema.json').sha256,
+        validatorSha256: webOwner.files.find(file => file.path === 'scripts/content/contract-authoring.mjs').sha256,
+        sourceCacheMatchesPinnedOwner: true,
+        sharedSourceFileCount: sharedSourceBytes.length
+      },
       fixtures: webFixtures
     },
+    sharedSourceBytes,
     capabilities,
     runtime,
     checkoutPins: {

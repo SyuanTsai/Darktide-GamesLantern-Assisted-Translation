@@ -25,18 +25,33 @@
     },
     "web": {
       "repository": "https://github.com/SyuanTsai/DarkTide-Web",
-      "commit": "47e3641fb56250602144a6373e42cd9a4f7d25b1",
+      "commit": "2816042d4a7380288ac8e73d1058a8accfe5687b",
       "snapshot": "web-v2-snapshot",
       "files": [
         {
-          "path": "content/schema/v2/shared-release.schema.json",
-          "sizeBytes": 6639,
-          "sha256": "2dd1ccc4124e66c504ff6def8de4ec035b674d6e0ecbfe3eb3c4519cb8ecbd9d"
+          "path": "content/contracts/source-v2-snapshot/content/fixtures/v2/representative-source.json",
+          "sizeBytes": 30954,
+          "sha256": "849aaa1adba8d73a8c3963de70b5af5e8d4aa9c4c55b9d69c0f74152c79b7b75"
         },
         {
-          "path": "scripts/content/contract-release.mjs",
-          "sizeBytes": 24311,
-          "sha256": "f2054ed33afdd6325450138202f7fbde9278f881de800959fb638db2794414d3"
+          "path": "content/contracts/source-v2-snapshot/content/schema/v2/source-contract.schema.json",
+          "sizeBytes": 34139,
+          "sha256": "4e413bafdd7478dda7527b3824ec36509b966343dc9f2e5e838063f80d002737"
+        },
+        {
+          "path": "content/contracts/source-v2-snapshot/scripts/content/contract-validator.mjs",
+          "sizeBytes": 61088,
+          "sha256": "7fbab2de7890e231a7c6e317f2997c1ca3939c17dc87483e927e91b6c6537aaa"
+        },
+        {
+          "path": "content/contracts/source-v2.lock.json",
+          "sizeBytes": 791,
+          "sha256": "8a88874d65494491425d49b3663823862ea6de6e42ccd9f02bf85315a2fe4f2e"
+        },
+        {
+          "path": "content/contracts/web-authoring.lock.json",
+          "sizeBytes": 209,
+          "sha256": "6d621d5356c176e1559773f79af4e68fd32b3c3f8eb51e1f5aba78a2696b3c59"
         },
         {
           "path": "content/fixtures/v2/shared-release/announcement-only/data/45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed/announcements.json",
@@ -87,6 +102,36 @@
           "path": "content/fixtures/v2/shared-release/valid/version.json",
           "sizeBytes": 655,
           "sha256": "431200543a9ca80e262d500b72b7a6aa9d4b26597a70edfbdc9604b6d49268e8"
+        },
+        {
+          "path": "content/fixtures/v2/web-authoring/official-inputs.json",
+          "sizeBytes": 9107,
+          "sha256": "07b1aaa0f2c60b73733b70a33527b7e4ac082e8905d670ddf96f5a80445b2669"
+        },
+        {
+          "path": "content/fixtures/v2/web-authoring/representative.json",
+          "sizeBytes": 27558,
+          "sha256": "64e4f169421a7e2c56c0234a32c10df0ebf97e5aee4b34d0a6f3d1c74d96fa92"
+        },
+        {
+          "path": "content/schema/v2/shared-release.schema.json",
+          "sizeBytes": 6639,
+          "sha256": "2dd1ccc4124e66c504ff6def8de4ec035b674d6e0ecbfe3eb3c4519cb8ecbd9d"
+        },
+        {
+          "path": "content/schema/v2/web-authoring.schema.json",
+          "sizeBytes": 20335,
+          "sha256": "0936fb116acbd00d6e51e66138a82817fae35885f9572945fb1d01e135ad6eee"
+        },
+        {
+          "path": "scripts/content/contract-authoring.mjs",
+          "sizeBytes": 55178,
+          "sha256": "57e488c1c12317a5c0a0826d089611e7bc3b9893d05dc8d228933e29b532a109"
+        },
+        {
+          "path": "scripts/content/contract-release.mjs",
+          "sizeBytes": 24311,
+          "sha256": "f2054ed33afdd6325450138202f7fbde9278f881de800959fb638db2794414d3"
         }
       ]
     }

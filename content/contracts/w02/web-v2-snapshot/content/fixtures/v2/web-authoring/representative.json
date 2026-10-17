@@ -1,0 +1,881 @@
+{
+  "schemaVersion": "2.0.0",
+  "contractKind": "web-authoring",
+  "fixtureOnly": true,
+  "publicationEligible": false,
+  "sourcePin": {
+    "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+    "commit": "15f285ec3ad9314435141a18125cabfc1b3d1d19",
+    "schemaId": "https://github.com/SyuanTsai/DarkTide-Source-Data/content/schema/v2/source-contract.schema.json",
+    "schemaSha256": "4e413bafdd7478dda7527b3824ec36509b966343dc9f2e5e838063f80d002737",
+    "fixtureSha256": "849aaa1adba8d73a8c3963de70b5af5e8d4aa9c4c55b9d69c0f74152c79b7b75",
+    "validatorSha256": "7fbab2de7890e231a7c6e317f2997c1ca3939c17dc87483e927e91b6c6537aaa"
+  },
+  "officialInputsSha256": "07b1aaa0f2c60b73733b70a33527b7e4ac082e8905d670ddf96f5a80445b2669",
+  "presentations": [
+    {
+      "authoringId": "fixture:presentation:skill-r1",
+      "entityRef": {
+        "recordId": "fixture:skill:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "skill"
+      },
+      "locale": "zh-TW",
+      "name": "合成技能範例",
+      "official": {
+        "officialSourceId": "fixture:official:skill-r1",
+        "entityRef": {
+          "recordId": "fixture:skill:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "skill"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_skill_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official skill description.",
+        "sourceTextSha256": "6627edb415e6310ba08426ba7ef240c480dacf07b842773eb65780933ab6a7ce",
+        "segments": [
+          {
+            "segmentId": "skill-r1:text",
+            "kind": "text",
+            "text": "Synthetic official skill description.",
+            "sha256": "6627edb415e6310ba08426ba7ef240c480dacf07b842773eb65780933ab6a7ce"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official skill description.",
+        "resolvedTextSha256": "6627edb415e6310ba08426ba7ef240c480dacf07b842773eb65780933ab6a7ce"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:skill-r1",
+        "locale": "zh-TW",
+        "text": "合成技能的官方說明。",
+        "textSha256": "8ddf7fa2b0e351c0f04551337bb8a5e5ec095be16fe173814b6d803412fa5fb9"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:blessing-r1",
+      "entityRef": {
+        "recordId": "fixture:blessing:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "blessing"
+      },
+      "locale": "zh-TW",
+      "name": "合成祝福範例",
+      "official": {
+        "officialSourceId": "fixture:official:blessing-r1",
+        "entityRef": {
+          "recordId": "fixture:blessing:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "blessing"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_blessing_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official blessing description.",
+        "sourceTextSha256": "7220941a8f37aaf62c532b5b0ab42b7aba4f83e2668d0a504d747c3922cb5c54",
+        "segments": [
+          {
+            "segmentId": "blessing-r1:text",
+            "kind": "text",
+            "text": "Synthetic official blessing description.",
+            "sha256": "7220941a8f37aaf62c532b5b0ab42b7aba4f83e2668d0a504d747c3922cb5c54"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official blessing description.",
+        "resolvedTextSha256": "7220941a8f37aaf62c532b5b0ab42b7aba4f83e2668d0a504d747c3922cb5c54"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:blessing-r1",
+        "locale": "zh-TW",
+        "text": "合成祝福的官方說明。",
+        "textSha256": "5af53a5d29c628951b49ddae0764c2871cddf2cd341bc8ccc2a579ab6e0daaca"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": [
+        {
+          "variantRef": {
+            "recordId": "fixture:variant:alpha",
+            "gameReleaseId": "fixture-r1",
+            "kind": "blessing-variant"
+          },
+          "tiers": [
+            1,
+            4
+          ]
+        }
+      ]
+    },
+    {
+      "authoringId": "fixture:presentation:weapon-r1",
+      "entityRef": {
+        "recordId": "fixture:weapon:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "weapon"
+      },
+      "locale": "zh-TW",
+      "name": "合成武器範例",
+      "official": {
+        "officialSourceId": "fixture:official:weapon-r1",
+        "entityRef": {
+          "recordId": "fixture:weapon:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "weapon"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_weapon_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official weapon value: {value}.",
+        "sourceTextSha256": "f288fa0d3cabc1b8328a745e5d1af49c4fdbd0660e99ba48660a83cd0cd5c1e2",
+        "segments": [
+          {
+            "segmentId": "weapon-r1:prefix",
+            "kind": "text",
+            "text": "Synthetic official weapon value: ",
+            "sha256": "9c3c3efafd70ae341168d1117152575d811fcd8d555e619d8c2a400cb4a98931"
+          },
+          {
+            "segmentId": "weapon-r1:value",
+            "kind": "parameter",
+            "parameterId": "value",
+            "token": "{value}",
+            "sha256": "db9a5a9b5a4cce07bf37a9a971eca3fcb9a404acf91b2afb1e3828dee0ff78b2"
+          },
+          {
+            "segmentId": "weapon-r1:period",
+            "kind": "text",
+            "text": ".",
+            "sha256": "cdb4ee2aea69cc6a83331bbe96dc2caa9a299d21329efb0336fc02a82e1839a8"
+          }
+        ],
+        "params": [
+          {
+            "parameterId": "value",
+            "sourceKey": "synthetic_damage_value",
+            "value": "40"
+          }
+        ],
+        "resolvedText": "Synthetic official weapon value: 40.",
+        "resolvedTextSha256": "f6207f0d674206324a567e8c6b2e50deabbe3e031d19ac3fa2ef006016553644"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:weapon-r1",
+        "locale": "zh-TW",
+        "text": "合成武器的官方數值：40。",
+        "textSha256": "191b0e4ce10e50d8a90d2bea31d80122706a4c8f1c3b314879a1a4c54870a854"
+      },
+      "errata": [
+        {
+          "errataId": "fixture:errata:weapon-r1",
+          "anchor": {
+            "officialSourceId": "fixture:official:weapon-r1",
+            "segmentId": "weapon-r1:prefix",
+            "segmentSha256": "9c3c3efafd70ae341168d1117152575d811fcd8d555e619d8c2a400cb4a98931"
+          },
+          "context": {
+            "description": "Synthetic mismatch only.",
+            "refs": [
+              {
+                "recordId": "fixture:claim:damage",
+                "gameReleaseId": "fixture-r1",
+                "kind": "claim"
+              }
+            ]
+          },
+          "claimRefs": [
+            {
+              "recordId": "fixture:claim:damage",
+              "gameReleaseId": "fixture-r1",
+              "kind": "claim"
+            }
+          ],
+          "evidenceRefs": [
+            {
+              "recordId": "fixture:evidence:alpha",
+              "gameReleaseId": "fixture-r1",
+              "kind": "evidence"
+            }
+          ],
+          "text": "此合成勘誤只示範錨點與來源連結。"
+        }
+      ],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [
+                {
+                  "recordId": "fixture:claim:damage",
+                  "gameReleaseId": "fixture-r1",
+                  "kind": "claim"
+                }
+              ],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:weapon-r2",
+      "entityRef": {
+        "recordId": "fixture:weapon:alpha",
+        "gameReleaseId": "fixture-r2",
+        "kind": "weapon"
+      },
+      "locale": "zh-TW",
+      "name": "合成武器範例",
+      "official": {
+        "officialSourceId": "fixture:official:weapon-r2",
+        "entityRef": {
+          "recordId": "fixture:weapon:alpha",
+          "gameReleaseId": "fixture-r2",
+          "kind": "weapon"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_weapon_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official weapon value: {value}.",
+        "sourceTextSha256": "f288fa0d3cabc1b8328a745e5d1af49c4fdbd0660e99ba48660a83cd0cd5c1e2",
+        "segments": [
+          {
+            "segmentId": "weapon-r2:prefix",
+            "kind": "text",
+            "text": "Synthetic official weapon value: ",
+            "sha256": "9c3c3efafd70ae341168d1117152575d811fcd8d555e619d8c2a400cb4a98931"
+          },
+          {
+            "segmentId": "weapon-r2:value",
+            "kind": "parameter",
+            "parameterId": "value",
+            "token": "{value}",
+            "sha256": "db9a5a9b5a4cce07bf37a9a971eca3fcb9a404acf91b2afb1e3828dee0ff78b2"
+          },
+          {
+            "segmentId": "weapon-r2:period",
+            "kind": "text",
+            "text": ".",
+            "sha256": "cdb4ee2aea69cc6a83331bbe96dc2caa9a299d21329efb0336fc02a82e1839a8"
+          }
+        ],
+        "params": [
+          {
+            "parameterId": "value",
+            "sourceKey": "synthetic_damage_value",
+            "value": "41"
+          }
+        ],
+        "resolvedText": "Synthetic official weapon value: 41.",
+        "resolvedTextSha256": "25477a4f604407ddd81326e97c7eadbab1b013ab7767ebe59bacf4ebb443ddc2"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:weapon-r2",
+        "locale": "zh-TW",
+        "text": "合成武器的官方數值：41。",
+        "textSha256": "936f941470c013ccda83620bd7ac65db403205430e59d9ef00dbbd7aad36f82a"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": [
+            {
+              "itemId": "fixture:item:term",
+              "text": "合成術語說明。",
+              "claimRefs": [],
+              "termRefs": [
+                {
+                  "recordId": "fixture:term:alpha",
+                  "gameReleaseId": "fixture-r1",
+                  "kind": "term",
+                  "compatibilityRef": {
+                    "recordId": "fixture:compat:r2",
+                    "gameReleaseId": "fixture-r2",
+                    "kind": "release-compatibility"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:catalog-r1",
+      "entityRef": {
+        "recordId": "fixture:catalog:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "catalog"
+      },
+      "locale": "zh-TW",
+      "name": "合成目錄項目範例",
+      "official": {
+        "officialSourceId": "fixture:official:catalog-r1",
+        "entityRef": {
+          "recordId": "fixture:catalog:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "catalog"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_catalog_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official catalog description.",
+        "sourceTextSha256": "dcdc4ef72cd565a3a6c6365fe539129fc0ac2083e8ee241e22e5980cbe3fe5e8",
+        "segments": [
+          {
+            "segmentId": "catalog-r1:text",
+            "kind": "text",
+            "text": "Synthetic official catalog description.",
+            "sha256": "dcdc4ef72cd565a3a6c6365fe539129fc0ac2083e8ee241e22e5980cbe3fe5e8"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official catalog description.",
+        "resolvedTextSha256": "dcdc4ef72cd565a3a6c6365fe539129fc0ac2083e8ee241e22e5980cbe3fe5e8"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:catalog-r1",
+        "locale": "zh-TW",
+        "text": "合成目錄項目的官方說明。",
+        "textSha256": "62682cac2d027c7c09c6c937fc07561d37c9af944cca664e389eef7b6f08935d"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:curio-r1",
+      "entityRef": {
+        "recordId": "fixture:curio:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "curio"
+      },
+      "locale": "zh-TW",
+      "name": "合成珍品範例",
+      "official": {
+        "officialSourceId": "fixture:official:curio-r1",
+        "entityRef": {
+          "recordId": "fixture:curio:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "curio"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_curio_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official curio description.",
+        "sourceTextSha256": "61caf61613d58bd31580aa8e274f853caabfb81b0858035a24d6efcad8a97c72",
+        "segments": [
+          {
+            "segmentId": "curio-r1:text",
+            "kind": "text",
+            "text": "Synthetic official curio description.",
+            "sha256": "61caf61613d58bd31580aa8e274f853caabfb81b0858035a24d6efcad8a97c72"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official curio description.",
+        "resolvedTextSha256": "61caf61613d58bd31580aa8e274f853caabfb81b0858035a24d6efcad8a97c72"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:curio-r1",
+        "locale": "zh-TW",
+        "text": "合成珍品的官方說明。",
+        "textSha256": "0d8a8866ab23e3a792e3f359875b8f154769cce3212885a9102286efd8e930d6"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:perk-r1",
+      "entityRef": {
+        "recordId": "fixture:perk:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "perk"
+      },
+      "locale": "zh-TW",
+      "name": "合成附加屬性範例",
+      "official": {
+        "officialSourceId": "fixture:official:perk-r1",
+        "entityRef": {
+          "recordId": "fixture:perk:alpha",
+          "gameReleaseId": "fixture-r1",
+          "kind": "perk"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_perk_alpha",
+        "occurrence": 0,
+        "sourceText": "Synthetic official perk description.",
+        "sourceTextSha256": "13865728c6025b5cfd96fa1cb814730bbe5b31e53296c8c33c7513d9287e631a",
+        "segments": [
+          {
+            "segmentId": "perk-r1:text",
+            "kind": "text",
+            "text": "Synthetic official perk description.",
+            "sha256": "13865728c6025b5cfd96fa1cb814730bbe5b31e53296c8c33c7513d9287e631a"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official perk description.",
+        "resolvedTextSha256": "13865728c6025b5cfd96fa1cb814730bbe5b31e53296c8c33c7513d9287e631a"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:perk-r1",
+        "locale": "zh-TW",
+        "text": "合成附加屬性的官方說明。",
+        "textSha256": "d56b36692bad1adea22e5a458858204c35875d52e059d73a18727830e59dfff7"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": []
+    },
+    {
+      "authoringId": "fixture:presentation:classification-r1",
+      "entityRef": {
+        "recordId": "fixture:classification:armor",
+        "gameReleaseId": "fixture-r1",
+        "kind": "classification"
+      },
+      "locale": "zh-TW",
+      "name": "合成分類範例",
+      "official": {
+        "officialSourceId": "fixture:official:classification-r1",
+        "entityRef": {
+          "recordId": "fixture:classification:armor",
+          "gameReleaseId": "fixture-r1",
+          "kind": "classification"
+        },
+        "origin": "game-localization",
+        "sourceLocale": "en",
+        "resource": "synthetic_localization",
+        "key": "fixture_classification_armor",
+        "occurrence": 0,
+        "sourceText": "Synthetic official classification description.",
+        "sourceTextSha256": "41c66ddda0dabb32506a2b30d6ee3567fa99744e3432465df05998e78d3e9e27",
+        "segments": [
+          {
+            "segmentId": "classification-r1:text",
+            "kind": "text",
+            "text": "Synthetic official classification description.",
+            "sha256": "41c66ddda0dabb32506a2b30d6ee3567fa99744e3432465df05998e78d3e9e27"
+          }
+        ],
+        "params": [],
+        "resolvedText": "Synthetic official classification description.",
+        "resolvedTextSha256": "41c66ddda0dabb32506a2b30d6ee3567fa99744e3432465df05998e78d3e9e27"
+      },
+      "faithfulTranslation": {
+        "origin": "faithful-translation",
+        "sourceId": "fixture:official:classification-r1",
+        "locale": "zh-TW",
+        "text": "合成分類的官方說明。",
+        "textSha256": "e67a0b75f190f23396ee7ce9af20a608c94099c3bdc4b1268e040328fdefb950"
+      },
+      "errata": [],
+      "detailSections": [
+        {
+          "sectionId": "effects",
+          "items": [
+            {
+              "itemId": "fixture:item:effect",
+              "text": "合成效果說明。",
+              "claimRefs": [],
+              "termRefs": []
+            }
+          ]
+        },
+        {
+          "sectionId": "conditions",
+          "items": []
+        },
+        {
+          "sectionId": "calculation",
+          "items": []
+        },
+        {
+          "sectionId": "notes",
+          "items": []
+        },
+        {
+          "sectionId": "extra",
+          "items": []
+        }
+      ],
+      "tierApplicability": []
+    }
+  ],
+  "termLocalizations": [
+    {
+      "authoringId": "fixture:term-localization:alpha-zh-tw",
+      "termRef": {
+        "recordId": "fixture:term:alpha",
+        "gameReleaseId": "fixture-r1",
+        "kind": "term"
+      },
+      "locale": "zh-TW",
+      "contextKey": "fixture_context",
+      "label": "合成術語",
+      "definition": "僅供契約測試的術語定義。"
+    }
+  ],
+  "announcements": [
+    {
+      "announcementId": "fixture:announcement:site",
+      "scope": "site",
+      "publishedOn": "2026-10-18",
+      "revision": 1,
+      "source": {
+        "kind": "site-owner",
+        "locator": "synthetic fixture",
+        "sha256": "ab94ec319d9f7574e41c10b15b3fdfeb39cf322877ec00d5b269c15c853c7b7a"
+      },
+      "blocks": [
+        {
+          "blockId": "fixture:block:heading",
+          "kind": "heading",
+          "text": "合成公告"
+        },
+        {
+          "blockId": "fixture:block:body",
+          "kind": "paragraph",
+          "text": "只測試契約，不代表正式內容。"
+        },
+        {
+          "blockId": "fixture:block:list",
+          "kind": "list",
+          "ordered": true,
+          "items": [
+            { "blockId": "fixture:block:list-item-one", "text": "合成清單第一項" },
+            { "blockId": "fixture:block:list-item-two", "text": "合成清單第二項" }
+          ]
+        },
+        {
+          "blockId": "fixture:block:table",
+          "kind": "table",
+          "rows": [
+            {
+              "cells": [
+                { "blockId": "fixture:block:table-cell-one", "text": "合成表格欄一" },
+                { "blockId": "fixture:block:table-cell-two", "text": "合成表格欄二" }
+              ]
+            }
+          ]
+        },
+        {
+          "blockId": "fixture:block:image-one",
+          "kind": "image",
+          "assetRef": { "assetId": "fixture:asset:shared" },
+          "alt": "合成圖像出現一"
+        },
+        {
+          "blockId": "fixture:block:image-two",
+          "kind": "image",
+          "assetRef": { "assetId": "fixture:asset:shared" },
+          "alt": "合成圖像出現二"
+        },
+        {
+          "blockId": "fixture:block:spoiler",
+          "kind": "spoiler",
+          "label": "合成摺疊區",
+          "blocks": [
+            { "blockId": "fixture:block:spoiler-body", "kind": "paragraph", "text": "合成摺疊內容" }
+          ]
+        }
+      ],
+      "assets": [
+        {
+          "assetId": "fixture:asset:shared",
+          "mediaType": "image/png",
+          "alt": "合成圖示",
+          "sourceUri": "https://synthetic.invalid/assets/icon.png",
+          "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "sizeBytes": 1
+        }
+      ]
+    }
+  ],
+  "gameChanges": [
+    {
+      "changeId": "fixture:game-change:curve",
+      "owner": "source",
+      "changeKind": "source-technical",
+      "sourceRef": {
+        "recordId": "fixture:game-change:curve",
+        "gameReleaseId": "fixture-r2",
+        "kind": "game-change"
+      },
+      "summary": {
+        "locale": "zh-TW",
+        "text": "合成技術變動摘要。",
+        "textSha256": "cb461ef390a531a424929a1e791a004a6755d8f4752ac8a8f2012fb7c9391c91"
+      },
+      "fieldSummaries": [
+        {
+          "field": "synthetic-damage",
+          "summary": "合成欄位摘要。"
+        }
+      ]
+    }
+  ],
+  "officialTextChanges": [
+    {
+      "changeId": "fixture:official-text-change:weapon",
+      "owner": "web",
+      "changeKind": "official-text",
+      "operation": "modified",
+      "entityRef": {
+        "recordId": "fixture:weapon:alpha",
+        "gameReleaseId": "fixture-r2",
+        "kind": "weapon"
+      },
+      "fromGameReleaseId": "fixture-r1",
+      "toGameReleaseId": "fixture-r2",
+      "fromOfficialSourceId": "fixture:official:weapon-r1",
+      "toOfficialSourceId": "fixture:official:weapon-r2",
+      "summary": {
+        "locale": "zh-TW",
+        "text": "合成官方字串變更摘要。",
+        "textSha256": "f6edda64a24dda11b504d7d8abbd56f8e0653bf54f7d88bef85cb5711f6d01e9"
+      }
+    }
+  ],
+  "reviewTargets": [
+    {
+      "targetId": "fixture:review:weapon-r1-details",
+      "ownerKind": "presentation",
+      "ownerId": "fixture:presentation:weapon-r1",
+      "fieldPath": "/detailSections",
+      "dimension": "content"
+    },
+    {
+      "targetId": "fixture:review:weapon-r1-translation",
+      "ownerKind": "presentation",
+      "ownerId": "fixture:presentation:weapon-r1",
+      "fieldPath": "/faithfulTranslation",
+      "dimension": "translation"
+    },
+    {
+      "targetId": "fixture:review:blessing-r1-tiers",
+      "ownerKind": "presentation",
+      "ownerId": "fixture:presentation:blessing-r1",
+      "fieldPath": "/tierApplicability",
+      "dimension": "context"
+    },
+    {
+      "targetId": "fixture:review:weapon-r1-name",
+      "ownerKind": "presentation",
+      "ownerId": "fixture:presentation:weapon-r1",
+      "fieldPath": "/name",
+      "dimension": "content"
+    },
+    {
+      "targetId": "fixture:review:term-label",
+      "ownerKind": "term-localization",
+      "ownerId": "fixture:term-localization:alpha-zh-tw",
+      "fieldPath": "/label",
+      "dimension": "content"
+    },
+    {
+      "targetId": "fixture:review:term-definition",
+      "ownerKind": "term-localization",
+      "ownerId": "fixture:term-localization:alpha-zh-tw",
+      "fieldPath": "/definition",
+      "dimension": "content"
+    }
+  ],
+  "reviewReceipts": []
+}
