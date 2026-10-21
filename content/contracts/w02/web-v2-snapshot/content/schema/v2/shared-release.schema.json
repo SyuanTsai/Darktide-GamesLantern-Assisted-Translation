@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:darktide-web:shared-release:2.0.0",
+  "title": "Darktide shared release metadata",
+  "description": "One shared version index, immutable release manifests, and an explicitly non-publishable synthetic fixture marker.",
+  "oneOf": [
+    { "$ref": "#/definitions/version" },
+    { "$ref": "#/definitions/manifest" },
+    { "$ref": "#/definitions/fixtureMarker" }
+  ],
+  "definitions": {
+    "sha1": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "gitCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "gameVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"
+    },
+    "contentVersion": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.[1-9][0-9]*$"
+    },
+    "manifestPath": {
+      "type": "string",
+      "pattern": "^/data/[a-f0-9]{64}/manifest\\.json$"
+    },
+    "filePath": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*\\.json$"
+    },
+    "domainKind": {
+      "type": "string",
+      "enum": [
+        "skills",
+        "blessings",
+        "weapons",
+        "terms",
+        "catalog",
+        "curios",
+        "perks",
+        "classifications",
+        "announcements",
+        "game-changes"
+      ]
+    },
+    "releasePointer": {
+      "type": "object",
+      "required": [
+        "game_version",
+        "content_version",
+        "data_revision",
+        "manifest_path",
+        "manifest_sha256"
+      ],
+      "properties": {
+        "game_version": { "$ref": "#/definitions/gameVersion" },
+        "content_version": { "$ref": "#/definitions/contentVersion" },
+        "data_revision": { "$ref": "#/definitions/sha256" },
+        "manifest_path": { "$ref": "#/definitions/manifestPath" },
+        "manifest_sha256": { "$ref": "#/definitions/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "version": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "data_revision",
+        "build_id",
+        "game_version",
+        "package_kind",
+        "game_releases"
+      ],
+      "properties": {
+        "schema_version": { "const": 2 },
+        "data_revision": { "$ref": "#/definitions/sha256" },
+        "build_id": { "$ref": "#/definitions/sha256" },
+        "game_version": { "$ref": "#/definitions/gameVersion" },
+        "package_kind": { "const": "published" },
+        "game_releases": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/releasePointer" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "repository",
+        "commit",
+        "sourceRevision",
+        "manifestSha256"
+      ],
+      "properties": {
+        "repository": {
+          "const": "https://github.com/SyuanTsai/DarkTide-Source-Data"
+        },
+        "commit": { "$ref": "#/definitions/gitCommit" },
+        "sourceRevision": { "$ref": "#/definitions/sha256" },
+        "manifestSha256": { "$ref": "#/definitions/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "web": {
+      "type": "object",
+      "required": [ "authoringCommit", "compilerCommit" ],
+      "properties": {
+        "authoringCommit": { "$ref": "#/definitions/gitCommit" },
+        "compilerCommit": { "$ref": "#/definitions/gitCommit" }
+      },
+      "additionalProperties": false
+    },
+    "compatibility": {
+      "type": "object",
+      "required": [ "dataContractMajor", "requiredFeatures", "gameSnapshotRefs" ],
+      "properties": {
+        "dataContractMajor": { "const": 2 },
+        "requiredFeatures": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "official-errata-details-v1",
+              "official-native-localizations-v1",
+              "blessing-tier-presentations-v1"
+            ]
+          }
+        },
+        "gameSnapshotRefs": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "domainFile": {
+      "type": "object",
+      "required": [ "kind", "path", "sizeBytes", "sha256", "dependencies" ],
+      "properties": {
+        "kind": { "$ref": "#/definitions/domainKind" },
+        "path": { "$ref": "#/definitions/filePath" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "$ref": "#/definitions/sha256" },
+        "dependencies": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/filePath" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "manifest": {
+      "type": "object",
+      "required": [
+        "schemaVersion",
+        "gameReleaseId",
+        "gameVersion",
+        "contentVersion",
+        "dataRevision",
+        "source",
+        "web",
+        "compatibility",
+        "files",
+        "changeIndexPath"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "2.0.0" },
+        "gameReleaseId": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._:-]{1,127}$"
+        },
+        "gameVersion": { "$ref": "#/definitions/gameVersion" },
+        "contentVersion": { "$ref": "#/definitions/contentVersion" },
+        "dataRevision": { "$ref": "#/definitions/sha256" },
+        "source": { "$ref": "#/definitions/source" },
+        "web": { "$ref": "#/definitions/web" },
+        "compatibility": { "$ref": "#/definitions/compatibility" },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/definitions/domainFile" }
+        },
+        "changeIndexPath": {
+          "anyOf": [
+            { "$ref": "#/definitions/filePath" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "fixtureMarker": {
+      "type": "object",
+      "required": [ "fixtureOnly", "publicationEligible", "fixtureId" ],
+      "properties": {
+        "fixtureOnly": { "const": true },
+        "publicationEligible": { "const": false },
+        "fixtureId": {
+          "type": "string",
+          "pattern": "^synthetic-[a-z0-9][a-z0-9-]{1,62}$"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

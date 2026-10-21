@@ -1,0 +1,146 @@
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "Noto Sans TC", sans-serif;
+  color: #202124;
+  background: #f5f7fa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 24px;
+  line-height: 1.55;
+}
+
+.page-header { margin: 8px 0 20px; }
+.eyebrow { color: #52627a; font-size: .82rem; font-weight: 700; letter-spacing: .08em; }
+h1 { margin: 4px 0 8px; }
+h2 { margin-top: 0; }
+h3 { margin-bottom: 6px; }
+h4 { margin: 12px 0 4px; }
+code { overflow-wrap: anywhere; }
+
+.panel, .notice, .entity-card {
+  background: #fff;
+  border: 1px solid #d9e0e8;
+  border-radius: 10px;
+  margin: 14px 0;
+  padding: 16px;
+}
+
+.control-row {
+  align-items: end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+label { display: grid; gap: 4px; min-width: 220px; }
+input, select, button {
+  border: 1px solid #9aa7b8;
+  border-radius: 6px;
+  font: inherit;
+  min-height: 38px;
+  padding: 6px 10px;
+}
+button { background: #173b65; color: #fff; cursor: pointer; }
+button:hover { background: #244f80; }
+button:focus-visible, input:focus-visible, select:focus-visible {
+  outline: 3px solid #8bbcf1;
+  outline-offset: 2px;
+}
+
+.status { font-weight: 700; }
+.status[data-state="active"] { color: #23633a; }
+.status[data-state="error"], .error { color: #a12424; }
+.error { font-weight: 700; }
+
+.notice { border-left: 5px solid #9a6a00; }
+.fixture-notice { background: #fff8e1; }
+.pending-notice { border-left-color: #a12424; }
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) 1fr;
+  gap: 6px 14px;
+  margin: 0;
+}
+.metadata-grid dt { color: #52627a; font-weight: 700; }
+.metadata-grid dd { margin: 0; overflow-wrap: anywhere; }
+
+.card-list { display: grid; gap: 12px; }
+.entity-card { margin: 0; }
+.entity-kind, .field-label { color: #52627a; font-size: .88rem; font-weight: 700; }
+.review-chip {
+  background: #f0f2f5;
+  border-radius: 999px;
+  display: inline-block;
+  font-size: .82rem;
+  margin: 2px 0 8px;
+  padding: 2px 10px;
+}
+.official-copy, .detail-section, .tier-summary {
+  border-top: 1px solid #e6eaf0;
+  margin-top: 12px;
+  padding-top: 4px;
+}
+.text-pair p { margin: 2px 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.errata {
+  background: #fff4f1;
+  border: 1px solid #e7b6a9;
+  border-radius: 8px;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+.erratum p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detail-section ul { margin: 4px 0; padding-left: 24px; }
+.detail-section li { margin: 5px 0; }
+.tier-selector-label { margin: 8px 0; max-width: 280px; }
+.selected-tier-label { font-weight: 700; }
+.term-reference {
+  background: #f1f5fa;
+  border-radius: 6px;
+  margin: 6px 0;
+  padding: 8px;
+}
+.term-reference p { margin: 2px 0 0; }
+.empty-value { color: #6b7280; }
+.integrity-list, .network-list { overflow-wrap: anywhere; }
+.network-list li { font-family: ui-monospace, Consolas, monospace; font-size: .9rem; }
+footer { color: #52627a; margin: 22px 0 8px; }
+
+@media (max-width: 680px) {
+  body { padding: 14px; }
+  .metadata-grid { grid-template-columns: 1fr; }
+  .metadata-grid dd { margin-bottom: 8px; }
+  label { width: 100%; }
+}
+.weapon-view {
+  border-top: 1px solid #e6eaf0;
+  margin-top: 12px;
+  padding-top: 4px;
+}
+.weapon-mark { font-weight: 700; }
+.weapon-mark-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+.weapon-mark-tab { background: #edf2f7; color: #202124; }
+.weapon-mark-tab:hover { background: #dce8f4; }
+.weapon-mark-tab[aria-selected="true"] { background: #173b65; color: #fff; font-weight: 700; }
+.weapon-mark-tab[aria-selected="true"]:hover { background: #244f80; }
+.weapon-mark-panel:focus-visible { outline: 3px solid #8bbcf1; outline-offset: 2px; }
+.weapon-attack-mode, .weapon-stat-section { margin: 8px 0; }
+.weapon-attack-mode h5, .weapon-stat-section h5 { margin: 6px 0; }
+.attack-segment { margin: 2px 0; }
+.weapon-stat-section { overflow-x: auto; }
+.weapon-stat-table { border-collapse: collapse; min-width: 460px; width: 100%; }
+.weapon-stat-table th, .weapon-stat-table td { border: 1px solid #d9e0e8; padding: 5px 8px; text-align: left; }
+.weapon-stat-table caption { font-weight: 700; text-align: left; }
+.weapon-stat-table .comparison-value { font-variant-numeric: tabular-nums; }
+.weapon-view-note { color: #52627a; font-size: .9rem; }

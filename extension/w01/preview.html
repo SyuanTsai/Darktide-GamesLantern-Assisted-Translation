@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>共享資料本機預覽</title>
+  <link rel="stylesheet" href="preview.css">
+  <script defer src="loader-core.js"></script>
+  <script defer src="preview.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <p class="eyebrow">W01 · DEVELOPMENT PREVIEW</p>
+    <h1>共享資料本機預覽</h1>
+    <p>這個獨立頁面只顯示已驗證並存於擴充功能 IndexedDB 的資料，不會修改遊戲頁面。</p>
+  </header>
+
+  <main>
+    <section class="panel controls" aria-labelledby="controls-title">
+      <h2 id="controls-title">資料來源</h2>
+      <p>載入動作固定連線至 <code id="preview-origin"></code>，頁面不接受自訂網址。</p>
+      <div class="control-row">
+        <label>遊戲版本
+          <input id="game-version" value="fixture-preview" maxlength="80" autocomplete="off">
+        </label>
+        <label>發佈識別
+          <input id="game-release-id" value="fixture-game-1" maxlength="100" autocomplete="off">
+        </label>
+        <button id="load-preview" type="button">從固定 Preview 載入</button>
+      </div>
+      <div class="control-row secondary-controls">
+        <label>已啟用的發佈
+          <select id="active-release" aria-label="已啟用的發佈"></select>
+        </label>
+        <button id="refresh-snapshot" type="button">重新讀取已驗證快照</button>
+      </div>
+      <p id="snapshot-state" class="status" role="status" aria-live="polite" data-state="idle">正在檢查本機快照…</p>
+      <p id="error-message" class="error" role="alert" hidden></p>
+    </section>
+
+    <section id="data-status" class="notice" aria-live="polite" hidden></section>
+
+    <section id="snapshot-info" class="panel" aria-labelledby="snapshot-title" hidden>
+      <h2 id="snapshot-title">快照資訊</h2>
+      <dl id="snapshot-metadata" class="metadata-grid"></dl>
+    </section>
+
+    <section id="domain-content" class="panel" aria-labelledby="domain-title" hidden>
+      <h2 id="domain-title">技能、祝福與武器</h2>
+      <div id="content-cards" class="card-list"></div>
+    </section>
+
+    <details id="integrity-details" class="panel" hidden>
+      <summary>已驗證檔案摘要</summary>
+      <ul id="integrity-list" class="integrity-list"></ul>
+    </details>
+
+    <details class="panel network-details">
+      <summary>Preview 請求紀錄</summary>
+      <p>只有按下載入時才向固定 HTTPS 主機請求；此處不含回應正文。</p>
+      <ol id="network-audit" class="network-list"></ol>
+    </details>
+  </main>
+
+  <footer>
+    <p>本機 DEV 預覽。檔案驗證與內容核准範圍分開顯示；未授權正式發布。</p>
+  </footer>
+</body>
+</html>

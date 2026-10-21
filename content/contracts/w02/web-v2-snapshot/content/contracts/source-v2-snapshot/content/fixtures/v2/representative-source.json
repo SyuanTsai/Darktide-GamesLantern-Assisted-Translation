@@ -1,0 +1,406 @@
+{
+  "schemaVersion": "2.0.0",
+  "contractKind": "source-technical",
+  "fixtureOnly": true,
+  "publicationEligible": false,
+  "gameReleases": [
+    {
+      "gameReleaseId": "fixture-r1",
+      "gameVersion": "1.0.0",
+      "gameBuild": "synthetic-build-001",
+      "releaseOrder": 1,
+      "snapshot": { "snapshotId": "fixture-snapshot-r1", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "contentSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    },
+    {
+      "gameReleaseId": "fixture-r2",
+      "gameVersion": "1.0.1",
+      "gameBuild": "synthetic-build-002",
+      "releaseOrder": 2,
+      "snapshot": { "snapshotId": "fixture-snapshot-r2", "commit": "cccccccccccccccccccccccccccccccccccccccc", "manifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "contentSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" }
+    }
+  ],
+  "sourceRefs": [
+    {
+      "sourceId": "fixture-private-r1",
+      "gameReleaseId": "fixture-r1",
+      "sourceKind": "private-derived",
+      "gameBuild": "synthetic-build-001",
+      "snapshot": { "snapshotId": "fixture-snapshot-r1", "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifestSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "contentSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" },
+      "tool": { "name": "synthetic-reader", "version": "1.0.0", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+      "artifactSha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "safeSummary": "Synthetic sanitized source batch; private raw locators are intentionally absent."
+    },
+    {
+      "sourceId": "fixture-public-code-r2",
+      "gameReleaseId": "fixture-r2",
+      "sourceKind": "public-code",
+      "repository": "https://example.invalid/synthetic/game-code",
+      "publicUrl": "https://example.invalid/synthetic/game-code/blob/cccccccccccccccccccccccccccccccccccccccc/fixture.lua",
+      "commit": "cccccccccccccccccccccccccccccccccccccccc",
+      "path": "fixture.lua",
+      "gameBuild": "synthetic-build-002",
+      "snapshot": { "snapshotId": "fixture-snapshot-r2", "commit": "cccccccccccccccccccccccccccccccccccccccc", "manifestSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "contentSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" },
+      "tool": { "name": "synthetic-reader", "version": "1.0.0", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" },
+      "artifactSha256": "1111111111111111111111111111111111111111111111111111111111111111",
+      "safeSummary": "Synthetic public-code source; no real game data is represented."
+    }
+  ],
+  "records": [
+    {
+      "recordId": "fixture:classification:armor",
+      "kind": "classification",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "taxonomy": "fixture-armor", "code": "fixture-light", "labelEn": "Synthetic light class" },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:curve:damage",
+      "kind": "stat-curve",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "inputUnit": "rating", "outputUnit": "damage", "knots": [{ "input": "0", "output": "0" }, { "input": "50", "output": "100" }, { "input": "100", "output": "80" }], "interpolation": { "status": "known", "value": "piecewise-linear" }, "edgePolicy": { "status": "known", "value": "clamp" } },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:stat:damage",
+      "kind": "stat-definition",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "quantity": "synthetic-damage", "inputUnit": "rating", "outputUnit": "damage", "panelInputRange": { "status": "known", "min": "0", "max": "100", "unit": "rating", "inclusive": { "min": true, "max": true }, "step": "1" }, "theoreticalInputRange": { "status": "known", "min": "0", "max": "100", "unit": "rating", "inclusive": { "min": true, "max": true }, "step": "0" }, "obtainableInputRange": { "status": "known", "min": "0", "max": "80", "unit": "rating", "inclusive": { "min": true, "max": true }, "step": "1" }, "curveRef": { "recordId": "fixture:curve:damage", "gameReleaseId": "fixture-r1" }, "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:damage:alpha",
+      "kind": "damage-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "profileKey": "synthetic-hit", "segments": [{ "segmentId": "primary", "quantity": "synthetic-damage", "value": { "status": "known", "decimal": "0", "unit": "damage" }, "hitZone": "body", "conditions": [{ "critical": false, "weakspot": false, "distance": { "status": "known", "decimal": "5", "unit": "m" }, "targetOrder": 1 }] }, { "segmentId": "secondary", "quantity": "synthetic-impact", "value": { "status": "known", "decimal": "1.5", "unit": "impact" }, "hitZone": "head", "conditions": [{ "critical": true, "weakspot": true, "projectilePenetration": { "status": "known", "decimal": "2", "unit": "point" }, "cleave": { "status": "known", "decimal": "1", "unit": "point" } }] }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:armor:light",
+      "kind": "armor-class",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "classKey": "fixture-light", "classificationRef": { "recordId": "fixture:classification:armor", "gameReleaseId": "fixture-r1" }, "damageTypes": [{ "damageType": "synthetic-slash", "multiplier": { "status": "known", "decimal": "1", "unit": "ratio" } }, { "damageType": "synthetic-impact", "multiplier": { "status": "known", "decimal": "0.75", "unit": "ratio" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:target:alpha",
+      "kind": "target-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "profileKey": "synthetic-target", "hitZones": [{ "zoneId": "body", "armorRef": { "recordId": "fixture:armor:light", "gameReleaseId": "fixture-r1" }, "weakspot": false, "critEligible": true, "damageMultipliers": [{ "critical": false, "weakspot": false, "multiplier": { "status": "known", "decimal": "1", "unit": "ratio" } }, { "critical": true, "weakspot": false, "multiplier": { "status": "known", "decimal": "1.5", "unit": "ratio" } }] }, { "zoneId": "head", "armorRef": { "recordId": "fixture:armor:light", "gameReleaseId": "fixture-r1" }, "weakspot": true, "critEligible": true, "damageMultipliers": [{ "critical": false, "weakspot": false, "multiplier": { "status": "known", "decimal": "1", "unit": "ratio" } }, { "critical": true, "weakspot": false, "multiplier": { "status": "known", "decimal": "1.5", "unit": "ratio" } }, { "critical": false, "weakspot": true, "multiplier": { "status": "known", "decimal": "1.25", "unit": "ratio" } }, { "critical": true, "weakspot": true, "multiplier": { "status": "known", "decimal": "1.875", "unit": "ratio" } }] }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:evidence:alpha",
+      "kind": "evidence",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "evidenceKind": "code-observed", "sourceRef": { "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }, "safeSummary": "Synthetic evidence only." },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "evidence" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:claim:damage",
+      "kind": "claim",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "targetRef": { "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }, "property": "synthetic-base-value", "value": { "status": "known", "decimal": "0", "unit": "damage" }, "context": { "action": "synthetic-primary", "mode": "standard", "critical": true, "weakspot": true, "distance": { "status": "known", "decimal": "5", "unit": "m" }, "targetOrder": 1, "charge": { "status": "known", "decimal": "0.5", "unit": "ratio" }, "variantRef": { "recordId": "fixture:variant:alpha", "gameReleaseId": "fixture-r1" }, "tier": 4, "talentRefs": [{ "recordId": "fixture:skill:alpha", "gameReleaseId": "fixture-r1" }], "blessingVariantRefs": [{ "recordId": "fixture:variant:alpha", "gameReleaseId": "fixture-r1" }], "perkRefs": [{ "recordId": "fixture:perk:alpha", "gameReleaseId": "fixture-r1" }], "modifierRuleRefs": [{ "recordId": "fixture:rule:alpha", "gameReleaseId": "fixture-r1" }], "statComparisons": [{ "statRef": { "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }, "input": "50", "inputUnit": "rating" }] }, "basis": "code-observed", "evidenceRefs": [{ "recordId": "fixture:evidence:alpha", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload/value", "dimension": "technical" }, { "fieldPath": "/payload/context", "dimension": "context" }, { "fieldPath": "/payload/evidenceRefs", "dimension": "evidence" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:attack:alpha",
+      "kind": "attack-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "familyId": "fixture-family", "markId": "fixture-mark", "itemKey": "fixture-item", "action": "synthetic-primary", "mode": "standard", "charge": { "status": "known", "decimal": "0.5", "unit": "ratio" }, "contexts": [{ "critical": true, "weakspot": true, "distance": { "status": "known", "decimal": "5", "unit": "m" }, "targetOrder": 1, "projectilePenetration": { "status": "known", "decimal": "2", "unit": "point" }, "cleave": { "status": "known", "decimal": "1", "unit": "point" }, "variantRef": { "recordId": "fixture:variant:alpha", "gameReleaseId": "fixture-r1" }, "tier": 4 }], "statComparisons": [{ "statRef": { "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }, "input": "50", "inputUnit": "rating" }], "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }], "damageProfileRefs": [{ "recordId": "fixture:damage:alpha", "gameReleaseId": "fixture-r1" }], "targetProfileRefs": [{ "recordId": "fixture:target:alpha", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:skill:alpha",
+      "kind": "skill",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "nameKey": "fixture.skill.alpha", "applicability": "synthetic class only", "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:blessing:alpha",
+      "kind": "blessing",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "nameKey": "fixture.blessing.alpha", "variantRefs": [{ "recordId": "fixture:variant:alpha", "gameReleaseId": "fixture-r1" }], "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:variant:alpha",
+      "kind": "blessing-variant",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "blessingRef": { "recordId": "fixture:blessing:alpha", "gameReleaseId": "fixture-r1" }, "weaponRefs": [{ "recordId": "fixture:weapon:alpha", "gameReleaseId": "fixture-r1" }], "definedTiers": [1, 2, 3, 4], "obtainableTiers": { "status": "known", "tiers": [1, 2, 4] }, "tierValues": [{ "tier": 1, "value": { "status": "known", "decimal": "0", "unit": "ratio" } }, { "tier": 2, "value": { "status": "known", "decimal": "0.02", "unit": "ratio" } }, { "tier": 3, "value": { "status": "known", "decimal": "0.03", "unit": "ratio" } }, { "tier": 4, "value": { "status": "known", "decimal": "0.04", "unit": "ratio" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:rule:alpha",
+      "kind": "modifier-rule",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "ruleKey": "fixture.multiply", "triggerText": "Synthetic trigger.", "operation": "multiply", "stackingGroup": "fixture-additive-group", "exclusions": ["synthetic exclusion"], "cap": { "status": "not-applicable" }, "duration": { "status": "unknown", "reasonCode": "NOT_VERIFIED" }, "expiryText": "Synthetic expiry.", "roundingText": "Synthetic rounding.", "clampText": "Synthetic clamp.", "evidenceRefs": [{ "recordId": "fixture:evidence:alpha", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:term:alpha",
+      "kind": "term",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "termKey": "fixture_term", "contextKey": "fixture_context", "technicalDefinitionEn": "Synthetic definition only.", "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:perk:alpha",
+      "kind": "perk",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "nameKey": "fixture.perk.alpha", "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }], "termRefs": [{ "recordId": "fixture:term:alpha", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:curio:alpha",
+      "kind": "curio",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "nameKey": "fixture.curio.alpha", "perkRefs": [{ "recordId": "fixture:perk:alpha", "gameReleaseId": "fixture-r1" }], "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }], "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:catalog:alpha",
+      "kind": "catalog",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "catalogKey": "fixture-items", "entries": [{ "entryKey": "fixture-skill", "entityRef": { "recordId": "fixture:skill:alpha", "gameReleaseId": "fixture-r1" } }, { "entryKey": "fixture-weapon", "entityRef": { "recordId": "fixture:weapon:alpha", "gameReleaseId": "fixture-r1" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:weapon:alpha",
+      "kind": "weapon",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "familyId": "fixture-family", "markId": "fixture-mark", "templateKey": "fixture_template", "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }], "attackProfileRefs": [{ "recordId": "fixture:attack:alpha", "gameReleaseId": "fixture-r1" }], "claimRefs": [{ "recordId": "fixture:claim:damage", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:weapon:retired",
+      "kind": "weapon",
+      "owner": "source",
+      "gameReleaseId": "fixture-r1",
+      "payload": { "familyId": "fixture-family", "markId": "fixture-retired", "templateKey": "fixture_retired", "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r1" }], "attackProfileRefs": [{ "recordId": "fixture:attack:alpha", "gameReleaseId": "fixture-r1" }] },
+      "sourceRefs": [{ "sourceId": "fixture-private-r1", "gameReleaseId": "fixture-r1" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:compat:r2",
+      "kind": "release-compatibility",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "fromGameReleaseId": "fixture-r1", "toGameReleaseId": "fixture-r2", "evidenceRefs": [{ "recordId": "fixture:evidence:r2", "gameReleaseId": "fixture-r2" }], "rationale": "Synthetic explicit compatibility sample; no production compatibility is claimed." },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "compatibility" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:evidence:r2",
+      "kind": "evidence",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "evidenceKind": "code-observed", "sourceRef": { "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }, "safeSummary": "Synthetic release evidence only." },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "evidence" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:blessing:alpha",
+      "kind": "blessing",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "nameKey": "fixture.blessing.alpha", "variantRefs": [{ "recordId": "fixture:variant:r2", "gameReleaseId": "fixture-r2" }], "claimRefs": [{ "recordId": "fixture:claim:r2", "gameReleaseId": "fixture-r2" }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:variant:r2",
+      "kind": "blessing-variant",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "blessingRef": { "recordId": "fixture:blessing:alpha", "gameReleaseId": "fixture-r2" }, "weaponRefs": [{ "recordId": "fixture:weapon:alpha", "gameReleaseId": "fixture-r2" }], "definedTiers": [1, 2, 3, 4], "obtainableTiers": { "status": "unknown", "reasonCode": "NOT_VERIFIED" }, "tierValues": [{ "tier": 1, "value": { "status": "known", "decimal": "0", "unit": "ratio" } }, { "tier": 2, "value": { "status": "known", "decimal": "0.02", "unit": "ratio" } }, { "tier": 3, "value": { "status": "known", "decimal": "0.03", "unit": "ratio" } }, { "tier": 4, "value": { "status": "known", "decimal": "0.04", "unit": "ratio" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:weapon:alpha",
+      "kind": "weapon",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "familyId": "fixture-family", "markId": "fixture-mark", "templateKey": "fixture_template", "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r2" }], "attackProfileRefs": [{ "recordId": "fixture:attack:r2", "gameReleaseId": "fixture-r2" }], "claimRefs": [{ "recordId": "fixture:claim:r2", "gameReleaseId": "fixture-r2" }], "predecessorRef": { "recordId": "fixture:weapon:alpha", "gameReleaseId": "fixture-r1", "compatibilityRef": "fixture:compat:r2" } },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:curve:damage",
+      "kind": "stat-curve",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "inputUnit": "rating", "outputUnit": "damage", "knots": [{ "input": "0", "output": "0" }, { "input": "50", "output": "110" }, { "input": "100", "output": "80" }], "interpolation": { "status": "known", "value": "piecewise-linear" }, "edgePolicy": { "status": "known", "value": "clamp" } },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:stat:damage",
+      "kind": "stat-definition",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "quantity": "synthetic-damage", "inputUnit": "rating", "outputUnit": "damage", "panelInputRange": { "status": "known", "min": "0", "max": "100", "unit": "rating", "inclusive": { "min": true, "max": true }, "step": "1" }, "theoreticalInputRange": { "status": "known", "min": "0", "max": "100", "unit": "rating", "inclusive": { "min": true, "max": true }, "step": "0" }, "obtainableInputRange": { "status": "unknown", "reasonCode": "NOT_VERIFIED" }, "curveRef": { "recordId": "fixture:curve:damage", "gameReleaseId": "fixture-r2" }, "claimRefs": [{ "recordId": "fixture:claim:r2", "gameReleaseId": "fixture-r2" }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:claim:r2",
+      "kind": "claim",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "targetRef": { "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r2" }, "property": "synthetic-revised-value", "value": { "status": "known", "decimal": "1.25", "unit": "damage" }, "context": { "action": "synthetic-primary", "mode": "standard", "critical": false, "weakspot": true }, "basis": "code-derived", "evidenceRefs": [{ "recordId": "fixture:evidence:r2", "gameReleaseId": "fixture-r2" }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload/value", "dimension": "technical" }, { "fieldPath": "/payload/evidenceRefs", "dimension": "evidence" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:attack:r2",
+      "kind": "attack-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "familyId": "fixture-family", "markId": "fixture-mark", "itemKey": "fixture-item", "action": "synthetic-primary", "mode": "standard", "contexts": [{ "distance": { "status": "unknown", "reasonCode": "NOT_VERIFIED" }, "targetOrder": 1 }], "statRefs": [{ "recordId": "fixture:stat:damage", "gameReleaseId": "fixture-r2" }], "damageProfileRefs": [{ "recordId": "fixture:damage:r2", "gameReleaseId": "fixture-r2" }], "targetProfileRefs": [{ "recordId": "fixture:target:r2", "gameReleaseId": "fixture-r2" }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "partial", "missing": [{ "field": "/payload/charge", "reasonCode": "NOT_IMPORTED" }] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:damage:r2",
+      "kind": "damage-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "profileKey": "synthetic-hit-r2", "segments": [{ "segmentId": "primary", "quantity": "synthetic-damage", "value": { "status": "known", "decimal": "1.25", "unit": "damage" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:armor:r2",
+      "kind": "armor-class",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "classKey": "fixture-light-r2", "damageTypes": [{ "damageType": "synthetic-slash", "multiplier": { "status": "known", "decimal": "1", "unit": "ratio" } }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:target:r2",
+      "kind": "target-profile",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "profileKey": "synthetic-target-r2", "hitZones": [{ "zoneId": "body", "armorRef": { "recordId": "fixture:armor:r2", "gameReleaseId": "fixture-r2" }, "weakspot": false, "critEligible": true, "damageMultipliers": [{ "critical": false, "weakspot": false, "multiplier": { "status": "known", "decimal": "1", "unit": "ratio" } }, { "critical": true, "weakspot": false, "multiplier": { "status": "known", "decimal": "1.25", "unit": "ratio" } }] }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    },
+    {
+      "recordId": "fixture:game-change:curve",
+      "kind": "game-change",
+      "owner": "source",
+      "gameReleaseId": "fixture-r2",
+      "payload": { "comparison": { "fromGameReleaseId": "fixture-r1", "toGameReleaseId": "fixture-r2", "fromGameVersion": "1.0.0", "toGameVersion": "1.0.1", "fromGameBuild": "synthetic-build-001", "toGameBuild": "synthetic-build-002", "fromSnapshotId": "fixture-snapshot-r1", "toSnapshotId": "fixture-snapshot-r2" }, "entityRef": { "recordId": "fixture:weapon:alpha", "gameReleaseId": "fixture-r2" }, "operation": "modified", "changedFields": [{ "field": "synthetic-damage", "before": { "status": "known", "decimal": "0", "unit": "damage" }, "after": { "status": "known", "decimal": "1.25", "unit": "damage" }, "unit": "damage" }], "verificationMethod": "code-observed", "evidenceRefs": [{ "recordId": "fixture:evidence:r2", "gameReleaseId": "fixture-r2" }] },
+      "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }],
+      "dataCoverage": { "status": "complete", "missing": [] },
+      "reviewTargets": [{ "fieldPath": "/payload", "dimension": "technical" }],
+      "reviewState": "pending"
+    }
+  ],
+  "tombstones": [
+    { "recordId": "fixture:weapon:retired", "gameReleaseId": "fixture-r2", "reason": "Synthetic removal example.", "sourceRefs": [{ "sourceId": "fixture-public-code-r2", "gameReleaseId": "fixture-r2" }], "reviewTargets": [{ "fieldPath": "/reason", "dimension": "identity" }], "reviewState": "pending" }
+  ],
+  "reviewReceipts": []
+}

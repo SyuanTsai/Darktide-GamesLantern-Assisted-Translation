@@ -1,0 +1,587 @@
+'use strict';
+
+(function(){
+  const origin=window.W01SharedLoader.DEV_ORIGIN;
+  const SECTION_LABELS=[
+    ['effects','效果'],
+    ['conditions','條件'],
+    ['calculation','計算'],
+    ['notes','補充說明'],
+    ['extra','額外說明']
+  ];
+  const ENTITY_DOMAINS=[
+    {domain:'skills',kind:'skill',label:'技能'},
+    {domain:'blessings',kind:'blessing',label:'祝福'},
+    {domain:'weapons',kind:'weapon',label:'武器'}
+  ];
+  const CHAINAXE_FAMILY_ID='chainaxe_p1';
+  const W01_APPROVAL_URL='https://syuantsai.atlassian.net/browse/SYP-333?focusedCommentId=11852';
+  const CHAINAXE_MARKS=[
+    {sourceMarkId:'chainaxe_p1_m1',markLabel:'Mk IV'},
+    {sourceMarkId:'chainaxe_p1_m2',markLabel:'Mk XII'}
+  ];
+  const state={lastActivation:null,selectedReleaseId:null};
+  const byId=id=>document.getElementById(id);
+  function node(tag,text,className){
+    const element=document.createElement(tag);
+    if(text!==undefined&&text!==null) element.textContent=String(text);
+    if(className) element.className=className;
+    return element;
+  }
+  function clear(element){
+    while(element.firstChild) element.removeChild(element.firstChild);
+  }
+  function sendWorker(message){
+    return new Promise((resolve,reject)=>{
+      chrome.runtime.sendMessage(message,response=>{
+        const lastError=chrome.runtime.lastError;
+        if(lastError){reject(new Error('背景服務通訊失敗'));return;}
+        if(!response){reject(new Error('背景服務沒有回覆'));return;}
+        resolve(response);
+      });
+    });
+  }
+  function status(text,stateName='ready'){
+    const element=byId('snapshot-state');
+    element.textContent=text;
+    element.dataset.state=stateName;
+    document.body.dataset.w01State=stateName;
+  }
+  function showError(message){
+    const element=byId('error-message');
+    element.textContent=message||'載入失敗';
+    element.hidden=false;
+  }
+  function showFailure(message){
+    clear(byId('content-cards'));
+    byId('snapshot-info').hidden=true;
+    byId('domain-content').hidden=true;
+    byId('integrity-details').hidden=true;
+    status('無法顯示已驗證的本機快照。','error');
+    showError(message);
+  }
+  function clearError(){
+    const element=byId('error-message');
+    element.textContent='';
+    element.hidden=true;
+  }
+  function appendPair(list,label,value){
+    list.append(node('dt',label),node('dd',value));
+  }
+  function formatWeaponDisplay(value,omitStaminaUnit=false){
+    const display=value&&value.displayValue;
+    const formats=['fixed-2','fixed-2-signed','floor-fixed-2','multiplier-percent-fixed-2-signed','percentage-fixed-2'];
+    if(!display||display.status!=='known'||typeof display.decimal!=='string'||!formats.includes(value.displayFormat))
+      throw new Error('武器素質顯示值無效');
+    let decimal=display.decimal;
+    if(['fixed-2-signed','multiplier-percent-fixed-2-signed'].includes(value.displayFormat)&&!decimal.startsWith('-'))
+      decimal='+'+decimal;
+    const suffixByUnit={
+      'attack-power-point':'',
+      percent:'%',
+      'stamina-point':' 耐力',
+      'stamina-point-per-second':' 耐力／秒',
+      'dodge-count':' 次',
+      ratio:''
+    };
+    if(!Object.hasOwn(suffixByUnit,display.unit)) throw new Error('武器素質單位無效');
+    const suffix=omitStaminaUnit&&display.unit==='stamina-point'?'':suffixByUnit[display.unit];
+    return decimal+suffix;
+  }
+  function reviewLabel(record){
+    return record&&record.reviewState==='approved'?'已標示審核完成':'待人工審核';
+  }
+  function termLocalizations(domains){
+    const map=new Map();
+    const terms=domains.terms;
+    for(const record of terms.records){
+      if(record.owner==='web'&&record.kind==='term-localization'&&record.locale==='zh-TW')
+        map.set(record.entityRef,record);
+    }
+    return map;
+  }
+  function appendTermReference(parent,termRef,localizedTerms){
+    const record=localizedTerms.get(termRef);
+    if(!record){
+      parent.append(node('p','此術語尚無可顯示的繁中詞條。','term-reference'));
+      return;
+    }
+    const block=node('div',undefined,'term-reference');
+    block.append(node('strong',record.payload.label||'術語'));
+    if(typeof record.payload.definition==='string')
+      block.append(node('p',record.payload.definition));
+    parent.append(block);
+  }
+  function renderOfficial(parent,official){
+    if(!official||typeof official!=='object') return;
+    const block=node('section',undefined,'official-copy');
+    block.append(node('h4','官方字串與繁中呈現'));
+    const localized=official.localizations&&official.localizations['zh-TW'];
+    if(localized&&localized.origin==='official'&&typeof localized.sourceText==='string'){
+      const group=node('div',undefined,'text-pair');
+      group.append(node('span','官方繁體中文原始字串','field-label'),node('p',localized.sourceText));
+      block.append(group);
+      if(typeof localized.resolvedText==='string'&&localized.resolvedText!==localized.sourceText){
+        const resolved=node('div',undefined,'text-pair');
+        resolved.append(node('span','代入已知參數後的呈現','field-label'),node('p',localized.resolvedText));
+        block.append(resolved);
+      }
+    }else if(localized&&typeof localized.text==='string'){
+      const group=node('div',undefined,'text-pair');
+      group.append(node('span','繁體中文','field-label'),node('p',localized.text));
+      block.append(group);
+    }
+    if(typeof official.sourceText==='string'){
+      const group=node('div',undefined,'text-pair');
+      group.append(node('span','來源字串（'+String(official.sourceLocale||'')+'）','field-label'),
+        node('p',official.sourceText));
+      block.append(group);
+    }
+    if(typeof official.resolvedText==='string'&&official.resolvedText!==official.sourceText){
+      const group=node('div',undefined,'text-pair');
+      group.append(node('span','解析後來源字串','field-label'),node('p',official.resolvedText));
+      block.append(group);
+    }
+    parent.append(block);
+  }
+  function renderErrata(parent,errata){
+    if(!Array.isArray(errata)||errata.length===0) return;
+    const block=node('section',undefined,'errata');
+    block.append(node('h4','獨立勘誤'));
+    for(const item of errata){
+      const article=node('article',undefined,'erratum');
+      article.append(node('span',reviewLabel(item),'review-chip'));
+      if(typeof item.text==='string') article.append(node('p',item.text));
+      block.append(article);
+    }
+    parent.append(block);
+  }
+  function renderDetailSections(parent,sections,localizedTerms){
+    for(const [key,label] of SECTION_LABELS){
+      const items=sections&&Array.isArray(sections[key])?sections[key]:[];
+      if(items.length===0) continue;
+      const block=node('section',undefined,'detail-section');
+      block.append(node('h4',label));
+      const list=node('ul');
+      for(const item of items){
+        const row=node('li');
+        if(typeof item.text==='string') row.append(node('span',item.text));
+        if(typeof item.termRef==='string') appendTermReference(row,item.termRef,localizedTerms);
+        if(!row.childNodes.length) row.append(node('span','此欄資料格式不含可顯示文字。','empty-value'));
+        list.append(row);
+      }
+      block.append(list);
+      parent.append(block);
+    }
+  }
+  function appendBlessingTiers(card,domain,entity,presentation,localizedTerms){
+    const variants=domain.records.filter(record=>record.owner==='source'&&record.kind==='blessing-variant'&&
+      record.payload&&record.payload.blessingRef===entity.recordId);
+    if(variants.length===0) return;
+    const block=node('section',undefined,'tier-summary');
+    block.append(node('h4','已定義階級'));
+    const tierPresentations=presentation&&presentation.tierPresentations;
+    if(tierPresentations){
+      const variant=variants.find(record=>record.recordId===tierPresentations.variantRef);
+      const payload=variant&&variant.payload||{};
+      if(payload.obtainableTiers&&payload.obtainableTiers.status==='unknown')
+        block.append(node('p','可取得階級：未知'));
+      const defined=Array.isArray(payload.definedTiers)?payload.definedTiers:[];
+      block.append(node('p','已定義階級：'+defined.map(tier=>'LV'+String(tier)).join('、')));
+      const select=node('select');
+      select.setAttribute('aria-label','祝福階級');
+      for(const option of tierPresentations.options){
+        const item=node('option','LV'+String(option.tier));
+        item.value=String(option.tier);
+        select.append(item);
+      }
+      select.value=String(tierPresentations.defaultTier);
+      const label=node('label','選擇階級','tier-selector-label');
+      label.append(select);
+      block.append(label);
+      const selected=node('div',undefined,'tier-selected-presentation');
+      function renderSelectedTier(tier){
+        const option=tierPresentations.options.find(candidate=>candidate.tier===tier);
+        if(!option) return;
+        clear(selected);
+        selected.append(node('p','目前選取：LV'+String(option.tier),'selected-tier-label'));
+        renderOfficial(selected,option.official);
+        renderDetailSections(selected,option.detailSections,localizedTerms);
+      }
+      renderSelectedTier(tierPresentations.defaultTier);
+      select.addEventListener('change',()=>renderSelectedTier(Number(select.value)));
+      block.append(selected);
+      card.append(block);
+      return;
+    }
+    for(const variant of variants){
+      const payload=variant.payload||{};
+      if(payload.obtainableTiers&&payload.obtainableTiers.status==='unknown')
+        block.append(node('p','可取得階級：未知'));
+      const tiers=Array.isArray(payload.definedTiers)?payload.definedTiers:[];
+      for(const tier of tiers){
+        const tierValue=Array.isArray(payload.tierValues)?
+          payload.tierValues.find(row=>row&&row.tier===tier):null;
+        const value=tierValue&&tierValue.value;
+        let description='資料標示為未知';
+        if(value&&value.status==='known'){
+          if(typeof value.decimal==='string'&&typeof value.unit==='string')
+            description=value.decimal+' '+value.unit;
+          else if(typeof value.text==='string') description=value.text;
+          else description='來源已提供階級值';
+        }
+        block.append(node('p','T'+String(tier)+' · '+description));
+      }
+    }
+    card.append(block);
+  }
+  function renderWeaponView(card,view){
+    if(!view||typeof view!=='object') return;
+    const block=node('section',undefined,'weapon-view');
+    block.append(node('h4','武器標示'),node('p',view.markLabel,'weapon-mark'));
+    block.append(node('h4',view.attackHeading));
+    for(const mode of view.attackModes){
+      const modeBlock=node('section',undefined,'weapon-attack-mode');
+      modeBlock.dataset.mode=mode.mode;
+      const modeLabel=mode.mode==='light'?'輕攻擊':mode.mode==='heavy'?'重攻擊':'特殊攻擊';
+      modeBlock.append(node('h5',modeLabel));
+      for(const segment of mode.segments){
+        const targetLabel=segment.targetRole==='single-target'?'單體目標':'群體順劈';
+        const row=node('p','第'+String(segment.index)+'段 · '+targetLabel,'attack-segment');
+        row.dataset.targetRole=segment.targetRole;
+        modeBlock.append(row);
+      }
+      block.append(modeBlock);
+    }
+    block.append(node('h4',view.comparisonHeading));
+    for(const section of view.statSections){
+      const sectionBlock=node('section',undefined,'weapon-stat-section');
+      sectionBlock.dataset.sourceStat=section.sourceStat;
+      sectionBlock.append(node('h5',section.label));
+      const table=node('table',undefined,'weapon-stat-table');
+      table.append(node('caption',section.label+'比較值'));
+      const header=node('tr');
+      header.append(node('th','素質','stat-label-header'));
+      for(const item of section.rows[0].values){
+        const cell=node('th',item.comparisonStat.decimal+'%');
+        cell.scope='col';
+        header.append(cell);
+      }
+      const thead=node('thead');
+      thead.append(header);
+      table.append(thead);
+      const body=node('tbody');
+      for(const row of section.rows){
+        const tr=node('tr',undefined,'weapon-stat-row');
+        tr.append(node('th',row.label));
+        const omitStaminaUnit=row.label==='耐力';
+        for(const value of row.values){
+          tr.append(node('td',formatWeaponDisplay(value,omitStaminaUnit),'comparison-value'));
+        }
+        body.append(tr);
+      }
+      table.append(body);
+      sectionBlock.append(table);
+      block.append(sectionBlock);
+    }
+    block.append(node('p',view.note,'weapon-view-note'));
+    card.append(block);
+  }
+  function resolveChainaxeWeaponMarks(domain,entities){
+    const family=entities.filter(entity=>entity.payload&&entity.payload.familyId===CHAINAXE_FAMILY_ID);
+    if(family.length===0) return null;
+    if(family.length!==CHAINAXE_MARKS.length)
+      throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+    const byMarkId=new Map();
+    for(const entity of family){
+      const expected=CHAINAXE_MARKS.find(mark=>mark.sourceMarkId===entity.payload.markId);
+      if(!expected||byMarkId.has(expected.sourceMarkId))
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      const presentations=domain.records.filter(record=>record.owner==='web'&&record.kind==='presentation'&&
+        record.locale==='zh-TW'&&record.entityRef===entity.recordId);
+      if(presentations.length!==1)
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      const presentation=presentations[0];
+      const view=presentation.payload&&presentation.payload.weaponView;
+      if(!view||view.markLabel!==expected.markLabel||typeof presentation.payload.name!=='string'||
+        presentation.payload.name.length===0)
+        throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+      byMarkId.set(expected.sourceMarkId,{entity,presentation});
+    }
+    const ordered=CHAINAXE_MARKS.map(mark=>byMarkId.get(mark.sourceMarkId));
+    if(ordered.some(mark=>!mark)||ordered[0].presentation.payload.name!==ordered[1].presentation.payload.name)
+      throw new Error('鏈斧型號與來源武器資料不一致，無法顯示此快照。');
+    return ordered;
+  }
+  function renderChainaxeWeaponSelector(marks,target,localizedTerms){
+    const familyId=marks[0].entity.payload.familyId;
+    const idPrefix='w01-'+familyId.replace(/[^A-Za-z0-9_-]/g,'-');
+    const card=node('article',undefined,'entity-card');
+    card.dataset.familyId=familyId;
+    card.append(node('p','武器','entity-kind'));
+    card.append(node('h3',marks[0].presentation.payload.name));
+    const tabList=node('div',undefined,'weapon-mark-tabs');
+    tabList.setAttribute('role','tablist');
+    tabList.setAttribute('aria-label','選擇武器型號');
+    const panel=node('div',undefined,'weapon-mark-panel');
+    panel.id=idPrefix+'-panel';
+    panel.setAttribute('role','tabpanel');
+    panel.setAttribute('tabindex','0');
+    const buttons=[];
+    for(let index=0;index<marks.length;index++){
+      const mark=marks[index];
+      const button=node('button',mark.presentation.payload.weaponView.markLabel,'weapon-mark-tab');
+      button.type='button';
+      button.id=idPrefix+'-tab-'+String(index);
+      button.setAttribute('role','tab');
+      button.setAttribute('aria-controls',panel.id);
+      button.setAttribute('aria-selected','false');
+      button.tabIndex=-1;
+      tabList.append(button);
+      buttons.push(button);
+    }
+    function selectMark(index){
+      const mark=marks[index];
+      for(let buttonIndex=0;buttonIndex<buttons.length;buttonIndex++){
+        const selected=buttonIndex===index;
+        buttons[buttonIndex].setAttribute('aria-selected',String(selected));
+        buttons[buttonIndex].tabIndex=selected?0:-1;
+      }
+      clear(panel);
+      panel.dataset.markId=mark.entity.payload.markId;
+      panel.setAttribute('aria-labelledby',buttons[index].id);
+      const payload=mark.presentation.payload;
+      panel.append(node('span',reviewLabel(mark.presentation),'review-chip'));
+      renderOfficial(panel,payload.official);
+      renderErrata(panel,payload.errata);
+      renderDetailSections(panel,payload.detailSections,localizedTerms);
+      renderWeaponView(panel,payload.weaponView);
+    }
+    for(let index=0;index<buttons.length;index++){
+      const button=buttons[index];
+      button.addEventListener('click',()=>selectMark(index));
+      button.addEventListener('keydown',event=>{
+        let next=-1;
+        if(event.key==='ArrowRight') next=(index+1)%buttons.length;
+        else if(event.key==='ArrowLeft') next=(index-1+buttons.length)%buttons.length;
+        else if(event.key==='Home') next=0;
+        else if(event.key==='End') next=buttons.length-1;
+        if(next<0) return;
+        event.preventDefault();
+        selectMark(next);
+        buttons[next].focus();
+      });
+    }
+    card.append(tabList,panel);
+    selectMark(0);
+    target.append(card);
+  }
+  function renderEntityCards(snapshot,localizedTerms){
+    const target=byId('content-cards');
+    clear(target);
+    byId('domain-content').hidden=true;
+    const domains=ENTITY_DOMAINS.map(config=>{
+      const domain=snapshot.domains[config.domain];
+      if(!domain||!Array.isArray(domain.records)) return {config,domain:null,entities:[],chainaxeMarks:null};
+      const entities=domain.records.filter(record=>record.owner==='source'&&record.kind===config.kind);
+      const chainaxeMarks=config.domain==='weapons'?resolveChainaxeWeaponMarks(domain,entities):null;
+      return {config,domain,entities,chainaxeMarks};
+    });
+    let count=0;
+    for(const {config,domain,entities,chainaxeMarks} of domains){
+      if(!domain) continue;
+      const chainaxeEntityIds=new Set(chainaxeMarks?chainaxeMarks.map(mark=>mark.entity.recordId):[]);
+      let chainaxeRendered=false;
+      for(const entity of entities){
+        if(chainaxeMarks&&chainaxeEntityIds.has(entity.recordId)){
+          if(!chainaxeRendered){
+            renderChainaxeWeaponSelector(chainaxeMarks,target,localizedTerms);
+            count++;
+            chainaxeRendered=true;
+          }
+          continue;
+        }
+        const presentation=domain.records.find(record=>record.owner==='web'&&record.kind==='presentation'&&
+          record.entityRef===entity.recordId&&record.locale==='zh-TW');
+        if(!presentation||!presentation.payload) continue;
+        const payload=presentation.payload;
+        const card=node('article',undefined,'entity-card');
+        card.dataset.entityRef=entity.recordId;
+        card.append(node('p',config.label,'entity-kind'));
+        card.append(node('h3',typeof payload.name==='string'?payload.name:'未提供繁中名稱'));
+        card.append(node('span',reviewLabel(presentation),'review-chip'));
+        const tieredBlessing=config.domain==='blessings'&&payload.tierPresentations;
+        if(!tieredBlessing) renderOfficial(card,payload.official);
+        renderErrata(card,payload.errata);
+        if(!tieredBlessing) renderDetailSections(card,payload.detailSections,localizedTerms);
+        if(config.domain==='blessings') appendBlessingTiers(card,domain,entity,payload,localizedTerms);
+        if(config.domain==='weapons') renderWeaponView(card,payload.weaponView);
+        target.append(card);
+        count++;
+      }
+    }
+    byId('domain-content').hidden=count===0;
+    if(count===0) target.append(node('p','目前沒有可顯示的技能、祝福或武器。'));
+  }
+  function renderIntegrity(snapshot){
+    const list=byId('integrity-list');
+    clear(list);
+    const info=snapshot.active;
+    list.append(node('li','manifest.json · SHA-256 '+String(info.manifestSha256||'')));
+    for(const [kind,file] of Object.entries(info.fileHashes||{}))
+      list.append(node('li',kind+'.json · '+String(file.sizeBytes)+' bytes · SHA-256 '+String(file.sha256)));
+    byId('integrity-details').hidden=false;
+  }
+  function renderNetworkAudit(requests){
+    const list=byId('network-audit');
+    clear(list);
+    if(!Array.isArray(requests)||requests.length===0){
+      list.append(node('li','尚無 Preview 請求紀錄。'));
+      return;
+    }
+    for(const request of requests){
+      let path='固定主機請求';
+      try{
+        const url=new URL(request.url);
+        path=url.pathname;
+      }catch{}
+      const result=request.networkError?'網路錯誤':
+        (typeof request.status==='number'?'HTTP '+String(request.status):'未收到狀態');
+      list.append(node('li',path+' · '+result));
+    }
+  }
+  function renderSnapshot(snapshot){
+    clearError();
+    const active=snapshot.active;
+    const manifest=snapshot.manifest;
+    const allRecords=Object.values(snapshot.domains).flatMap(domain=>domain.records||[]);
+    const hasPending=allRecords.some(record=>record.reviewState!=='approved');
+    const notice=byId('data-status');
+    clear(notice);
+    if(manifest.fixtureOnly===true){
+      notice.append(node('strong','合成 Fixture 資料'));
+      notice.append(node('span',' 此資料不是已確認的遊戲事實。'));
+      notice.classList.add('fixture-notice');
+    }else if(manifest.publicationEligible!==true){
+      notice.append(node('strong','待審資料'));
+      notice.append(node('span',hasPending
+        ?' 此套件含待審記錄；已核准的 W01 範圍與限制以驗收紀錄為準。'
+        :' 此套件尚未取得正式發布資格；已核准的 W01 範圍與限制以驗收紀錄為準。'));
+      const approvalLink=node('a','W01 驗收紀錄');
+      approvalLink.setAttribute('href',W01_APPROVAL_URL);
+      approvalLink.setAttribute('target','_blank');
+      approvalLink.setAttribute('rel','noopener noreferrer');
+      notice.append(approvalLink);
+      notice.classList.add('fixture-notice');
+    }else{
+      notice.classList.remove('fixture-notice');
+    }
+    if(hasPending||manifest.publicationEligible!==true){
+      if(manifest.fixtureOnly===true)
+        notice.append(node('p','內容含待審記錄或未通過發布條件；保留來源文字與勘誤的分離呈現。'));
+      else if(manifest.publicationEligible===true)
+        notice.append(node('p','內容含待審記錄；官方原文與獨立勘誤分開顯示。'));
+      notice.classList.add('pending-notice');
+    }else{
+      notice.classList.remove('pending-notice');
+    }
+    notice.hidden=notice.childNodes.length===0;
+
+    const metadata=byId('snapshot-metadata');
+    clear(metadata);
+    appendPair(metadata,'遊戲版本',active.gameVersion);
+    appendPair(metadata,'發佈識別',active.gameReleaseId);
+    appendPair(metadata,'內容版本',active.contentVersion);
+    appendPair(metadata,'資料修訂',active.dataRevision);
+    appendPair(metadata,'套件類型',active.packageKind||'fixture');
+    appendPair(metadata,'Fixture only',String(manifest.fixtureOnly===true));
+    appendPair(metadata,'可發布',String(manifest.publicationEligible===true));
+    appendPair(metadata,'待審記錄',String(hasPending));
+    byId('snapshot-info').hidden=false;
+    const terms=termLocalizations(snapshot.domains);
+    renderEntityCards(snapshot,terms);
+    renderIntegrity(snapshot);
+    status('已顯示通過驗證的本機快照。','active');
+  }
+  async function loadSnapshot(gameReleaseId){
+    if(!gameReleaseId){
+      status('請先選擇已啟用的發佈。','empty');
+      return;
+    }
+    status('正在驗證本機快照…','loading');
+    clearError();
+    const response=await sendWorker({type:'W01_GET_SNAPSHOT',gameReleaseId});
+    if(!response.ok) throw new Error(response.error||'無法讀取已驗證快照');
+    if(!response.snapshot){
+      status('尚未啟用這個發佈。','empty');
+      return;
+    }
+    state.selectedReleaseId=gameReleaseId;
+    renderSnapshot(response.snapshot);
+  }
+  async function refreshReleaseList(){
+    const response=await sendWorker({type:'W01_LIST_ACTIVE'});
+    if(!response.ok) throw new Error(response.error||'無法讀取本機發佈清單');
+    const select=byId('active-release');
+    const previous=state.selectedReleaseId||select.value;
+    clear(select);
+    const releases=Array.isArray(response.activeReleases)?response.activeReleases:[];
+    for(const release of releases){
+      const option=node('option',release.gameVersion+' · '+release.contentVersion+' · '+release.gameReleaseId);
+      option.value=release.gameReleaseId;
+      select.append(option);
+    }
+    if(releases.length===0){
+      select.append(node('option','沒有已啟用的發佈'));
+      select.disabled=true;
+      byId('snapshot-info').hidden=true;
+      byId('domain-content').hidden=true;
+      byId('integrity-details').hidden=true;
+      byId('data-status').hidden=true;
+      status('本機尚無已啟用快照。可從固定 Preview 載入。','empty');
+      return;
+    }
+    select.disabled=false;
+    const selected=releases.some(release=>release.gameReleaseId===previous)?previous:releases[0].gameReleaseId;
+    select.value=selected;
+    await loadSnapshot(selected);
+  }
+  async function loadPreviewPackage(){
+    clearError();
+    const gameVersion=byId('game-version').value.trim();
+    const gameReleaseId=byId('game-release-id').value.trim();
+    state.selectedReleaseId=gameReleaseId;
+    status('正在向固定 Preview 來源載入套件…','loading');
+    const response=await sendWorker({type:'W01_CHECK_AND_ACTIVATE',gameVersion,gameReleaseId});
+    state.lastActivation=response;
+    renderNetworkAudit(response.networkRequests||[]);
+    if(!response.ok){
+      await refreshReleaseList();
+      showError(response.error||'Preview 套件驗證失敗；目前快照不會被替換。');
+      return;
+    }
+    await refreshReleaseList();
+  }
+  async function init(){
+    byId('preview-origin').textContent=origin;
+    byId('load-preview').addEventListener('click',()=>{
+      loadPreviewPackage().catch(error=>showFailure(error.message));
+    });
+    byId('refresh-snapshot').addEventListener('click',()=>{
+      loadSnapshot(byId('active-release').value).catch(error=>showFailure(error.message));
+    });
+    byId('active-release').addEventListener('change',()=>{
+      loadSnapshot(byId('active-release').value).catch(error=>showFailure(error.message));
+    });
+    renderNetworkAudit([]);
+    try{await refreshReleaseList();}
+    catch(error){showFailure(error.message);}
+  }
+  window.W01Preview=Object.freeze({
+    refreshReleaseList,
+    loadSnapshot,
+    sendWorker,
+    getLastActivation:()=>state.lastActivation
+  });
+  init();
+})();

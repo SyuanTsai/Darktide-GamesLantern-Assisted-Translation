@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "2.0.0",
+  "gameReleaseId": "synthetic-release-announcement-only",
+  "gameVersion": "1.13.2",
+  "contentVersion": "1.13.2.1",
+  "dataRevision": "45e65d1f2bddb96eaf8277213fd9cdbf40aa7cc20bedb1637373df88d5e836ed",
+  "source": {
+    "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+    "commit": "0000000000000000000000000000000000000000",
+    "sourceRevision": "0000000000000000000000000000000000000000000000000000000000000000",
+    "manifestSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "web": {
+    "authoringCommit": "1111111111111111111111111111111111111111",
+    "compilerCommit": "2222222222222222222222222222222222222222"
+  },
+  "compatibility": {
+    "dataContractMajor": 2,
+    "requiredFeatures": [],
+    "gameSnapshotRefs": [
+      "synthetic-snapshot-1-13-2"
+    ]
+  },
+  "files": [
+    {
+      "kind": "announcements",
+      "path": "announcements.json",
+      "sizeBytes": 120,
+      "sha256": "c71e1f821d1e2ea877b61c4a7b7e65228ca9373f0077f25fecce6bbe4af031be",
+      "dependencies": []
+    }
+  ],
+  "changeIndexPath": null
+}
