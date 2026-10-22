@@ -37,6 +37,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
   const GAME_RELEASE_ID = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
   const SNAPSHOT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
   const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+  const GAME_ORIGIN = 'https://darktide.gameslantern.com';
 
   function errorResponse(code) {
     return { ok: false, error: { code } };
@@ -72,10 +73,27 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     } catch (_) { return false; }
   }
 
+  function supportedGamePath(pathname) {
+    return typeof pathname === 'string'
+      && /^\/(?:build-editor|abilities(?:\/[a-z0-9-]+)?|weapon-blessing-traits|weapons(?:\/[a-z0-9-]+){1,2})\/?$/i.test(pathname);
+  }
+
+  function validGamePageSender(sender) {
+    if (!sender || sender.frameId !== 0 || !sender.tab || !Number.isInteger(sender.tab.id)
+      || sender.tab.id < 0 || sender.origin !== GAME_ORIGIN || typeof sender.url !== 'string') return false;
+    try {
+      const parsed = new URL(sender.url);
+      return parsed.protocol === 'https:' && parsed.hostname === 'darktide.gameslantern.com'
+        && parsed.origin === GAME_ORIGIN && !parsed.username && !parsed.password && !parsed.port
+        && supportedGamePath(parsed.pathname);
+    } catch (_) { return false; }
+  }
+
   function trustedSender(sender, runtimeId) {
     if (!sender || typeof runtimeId !== 'string' || sender.id !== runtimeId) return false;
     const addresses = [sender.origin, sender.url].filter((value) => value !== undefined && value !== null);
-    return addresses.length > 0 && addresses.every((value) => validExtensionAddress(value, runtimeId));
+    if (addresses.length > 0 && addresses.every((value) => validExtensionAddress(value, runtimeId))) return true;
+    return validGamePageSender(sender);
   }
 
   function bytesToBase64(value) {
@@ -158,5 +176,6 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     };
   }
 
-  return Object.freeze({ MESSAGE_TYPE, createMessageHandler, normalizeIdentity, serializeResult, trustedSender });
+  return Object.freeze({ MESSAGE_TYPE, createMessageHandler, normalizeIdentity, serializeResult, trustedSender,
+    supportedGamePath });
 });

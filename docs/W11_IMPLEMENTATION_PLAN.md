@@ -36,6 +36,8 @@ Extension直接沿用W10九個shared模組與現有node:test／Chromium架構。
 
 祝福family／mark／variant／tier／release精確選取；unknown tier不預選最高。Web可用精確blessingRef／variantRef／tier閱讀已批准內容而不提供weapon context，適用武器關係未驗證時明列unknown；一旦要求family／mark限定就必須有Source明確weapon refs，不能依ID猜關係。LV變化同步官方文字、數字、時間、五節與可取得註記，defined與obtainable分開。武器按family分組、mark頁籤切換完整statSections／curves／attackChains／conditions。直接顯示Source已給值／節點／矩陣／單位；60/80比較點不變掉落範圍，不推算傷害、上下限或執行公式。只呈現來源支持的形狀，無新增文案owner。
 
+補充查驗（2026-10-23）：Extension接線時發現兩端getWeapon原先均丟棄已解析術語，Web renderer亦未接武器有效勘誤／術語。依既有R05/R07最小修復兩端相同語意；同一位Luna/Max可改Web的web/shared-view.mjs、web/shared-render.mjs、test/w11-shared-view.test.mjs、test/w11-shared-app.integration.test.mjs及必要既有test/w11-shared-view.fixture.mjs。先保存Web有效Red，再同步UMD核心／renderer；不改批准原始資料、authoring或收據。Extension先寫core的流程偏差另記，不回造Red；最終重新比對兩端核心與真資料consumer輸出。
+
 ### 3.2 Web live app接線
 
 新增 `web/shared-client.mjs`／`web/shared-render.mjs`；修改 `web/app.mjs`、必要 `web/style.css`，沿既有ESM/hash graph。固定可信build context選release，先驗manifest原bytes/hash，再只取四核心依賴的同origin不可變URL；驗HTTP200、JSON MIME、UTF-8、大小、hash、schema／kind／release／features／依賴及view必要shape。上限沿W10（manifest256KiB／單域8MiB／整包16MiB）。Source metadata URL只作來源定位，不觸發任意請求。

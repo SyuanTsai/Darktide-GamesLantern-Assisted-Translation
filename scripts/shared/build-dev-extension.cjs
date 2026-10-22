@@ -11,7 +11,15 @@ const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const SHARED_FILES = Object.freeze([
   'contract.js', 'domains.js', 'loader.js', 'snapshot-store.js',
   'update-coordinator.js', 'document-session.js', 'baseline-provider.js',
-  'client.js', 'service-worker.js'
+  'client.js', 'service-worker.js', 'native-identity.js', 'view-model.js',
+  'presentation.js', 'dom-adapter.js', 'dom-controller.js', 'content-entry.js', 'display.css'
+]);
+const GAME_CONTENT_MATCHES = Object.freeze([
+  'https://darktide.gameslantern.com/build-editor*',
+  'https://darktide.gameslantern.com/abilities',
+  'https://darktide.gameslantern.com/abilities/*',
+  'https://darktide.gameslantern.com/weapon-blessing-traits*',
+  'https://darktide.gameslantern.com/weapons/*'
 ]);
 const CORE_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
 const EXPECTED_MANIFEST_SHA256 = 'bf655afeda2d183e4788860efca23740131b697830bd1d88b0d866b27d5278c7';
@@ -165,6 +173,19 @@ function buildDevExtension(options = {}) {
       permissions: [],
       host_permissions: [selectedOrigin + '/*'],
       background: { service_worker: 'shared/service-worker.js', type: 'classic' },
+      content_scripts: [{
+        matches: [...GAME_CONTENT_MATCHES],
+        js: [
+          'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
+          'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
+          'shared/view-model.js', 'shared/presentation.js', 'shared/dom-adapter.js',
+          'shared/dom-controller.js', ...(includeTestHarness ? ['test-support/native-proof-registry.js'] : []),
+          'shared/content-entry.js'
+        ],
+        css: ['shared/display.css'],
+        run_at: 'document_idle',
+        all_frames: false
+      }],
       content_security_policy: { extension_pages: "script-src 'self'; object-src 'self'" }
     };
     writeNew(path.join(extensionPath, 'manifest.json'), Buffer.from(JSON.stringify(manifest, null, 2) + '\n', 'utf8'));
@@ -173,6 +194,8 @@ function buildDevExtension(options = {}) {
       const testSource = path.join(REPOSITORY_ROOT, 'tests', 'w10');
       copyRequired(path.join(testSource, 'mv3-harness.html'), path.join(extensionPath, 'w10-harness.html'));
       copyRequired(path.join(testSource, 'mv3-harness.js'), path.join(extensionPath, 'w10-harness.js'));
+      copyRequired(path.join(REPOSITORY_ROOT, 'tests', 'w11', 'native-proof-registry.js'),
+        path.join(extensionPath, 'test-support', 'native-proof-registry.js'));
     }
     return { outputRoot, extensionPath, manifest, selectedOrigin, includeTestHarness, approvedBaseline };
   } catch (error) {

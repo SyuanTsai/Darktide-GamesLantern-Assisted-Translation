@@ -30,6 +30,8 @@
       return !!(record.target.parentElement && record.target.parentElement.closest('[data-w11-owned]'));
     }
     if (record.type !== 'childList') return false;
+    if (record.target && record.target.nodeType === 1
+      && (record.target.hasAttribute('data-w11-owned') || !!record.target.closest('[data-w11-owned]'))) return true;
     const changed = [...record.addedNodes, ...record.removedNodes];
     return changed.length > 0 && changed.every((node) => node.nodeType === 1
       ? node.hasAttribute('data-w11-owned') || !!node.closest('[data-w11-owned]')
@@ -37,12 +39,16 @@
   }
 
   function createDomController({ document = globalThis.document, root = document, identityResolver,
-    getNativeSnapshotBytes = () => null, client, adapter, buildViewModels = presentationApi.buildSkillViewModels,
+    getNativeSnapshotBytes = () => null, client, adapter,
+    buildViewModels = presentationApi.buildSkillViewModels,
+    buildWeaponFamilyViewModels = presentationApi.buildWeaponFamilyViewModels,
     onStatus = () => {} } = {}) {
     if (!document || !root || typeof root.querySelectorAll !== 'function') throw new TypeError('a document and scan root are required');
     if (!identityResolver || typeof identityResolver.resolve !== 'function') throw new TypeError('a native identity resolver is required');
     if (!client || typeof client.initialize !== 'function') throw new TypeError('a W10 document-pinned client is required');
-    if (typeof getNativeSnapshotBytes !== 'function' || typeof buildViewModels !== 'function' || typeof onStatus !== 'function') {
+    if (typeof getNativeSnapshotBytes !== 'function' || typeof buildViewModels !== 'function'
+      || typeof buildWeaponFamilyViewModels !== 'function'
+      || typeof onStatus !== 'function') {
       throw new TypeError('DOM controller dependencies are invalid');
     }
     const dom = adapter || adapterApi.createDomAdapter({ document });
@@ -51,6 +57,7 @@
     let currentIdentity = null;
     let pinnedSnapshot = null;
     let models = [];
+    let weaponFamilies = [];
     let observer = null;
     let patchObserver = null;
     let observedPatchRegion = null;
@@ -142,6 +149,7 @@
       restoreAll();
       pinnedSnapshot = null;
       models = [];
+      weaponFamilies = [];
       stopped = true;
       setState('original', reason, currentIdentity);
     }
@@ -184,6 +192,11 @@
         return;
       }
 
+      if (typeof getNativeSnapshotBytes.pin === 'function' && !getNativeSnapshotBytes.pin(evidence)) {
+        stopWithReason(currentIdentity ? 'identity-changed' : 'unknown-identity');
+        return;
+      }
+
       const selectionFailure = patchSelectionFailure(proof);
       if (selectionFailure) {
         stopWithReason(selectionFailure);
@@ -212,19 +225,33 @@
         pinnedSnapshot = result.snapshot;
         try { models = buildViewModels(pinnedSnapshot); } catch (_) { models = []; }
         if (!Array.isArray(models)) models = [];
+        try { weaponFamilies = buildWeaponFamilyViewModels(pinnedSnapshot); } catch (_) { weaponFamilies = []; }
+        if (!Array.isArray(weaponFamilies)) weaponFamilies = [];
       }
 
-      const slots = dom.collectSkillSlots(root);
+      const slots = [
+        ...dom.collectSkillSlots(root).map((slot) => ({ kind: 'skill', slot, anchor: slot.anchor })),
+        ...dom.collectWeaponSlots(root).map((slot) => ({ kind: 'weapon', slot, anchor: slot.heading }))
+      ];
       reconcileRecords(slots);
-      for (const slot of slots) {
-        if (records.has(slot.anchor)) continue;
-        const observation = dom.observe(slot);
-        const matches = models.filter((model) => presentationApi.matchesSkillObservation(model, observation));
-        if (matches.length !== 1) continue;
-        const record = dom.applySkill(slot, matches[0]);
-        if (record) records.set(slot.anchor, record);
+      for (const entry of slots) {
+        if (records.has(entry.anchor)) continue;
+        let record = null;
+        if (entry.kind === 'skill') {
+          const observation = dom.observe(entry.slot);
+          const matches = models.filter((model) => presentationApi.matchesSkillObservation(model, observation));
+          if (matches.length === 1) record = dom.applySkill(entry.slot, matches[0]);
+        } else {
+          const observation = dom.observeWeapon(entry.slot);
+          const matches = weaponFamilies.flatMap((family) => family.marks.map((mark) => ({ family, mark })))
+            .filter(({ mark }) => presentationApi.matchesWeaponObservation(mark, observation));
+          if (matches.length === 1) record = dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark,
+            matches[0].family.marks);
+        }
+        if (record) records.set(entry.anchor, record);
       }
-      setState(models.length ? 'ready' : 'original', models.length ? null : 'no-matching-presentation', currentIdentity);
+      const anyModels = models.length + weaponFamilies.length > 0;
+      setState(anyModels ? 'ready' : 'original', anyModels ? null : 'no-matching-presentation', currentIdentity);
     }
 
     function scan() {

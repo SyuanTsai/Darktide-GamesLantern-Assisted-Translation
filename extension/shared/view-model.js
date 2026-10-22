@@ -5,7 +5,7 @@
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   'use strict';
 
-  // Local UMD packaging of Web shared-view.mjs at commit 1960fc207194cebfc8e895e4046c93c88beb18c9; no Web checkout is loaded at runtime.
+  // Local UMD packaging of Web shared-view.mjs at commit 87315a748b61d1bac1347ab7529cd4fc8ace4b0b; no Web checkout is loaded at runtime.
 const SECTION_ORDER = Object.freeze([
   ['effects', '效果'],
   ['conditions', '條件'],
@@ -395,7 +395,8 @@ function createSharedViewModel({ domains, gameReleaseId } = {}) {
       return unavailable('missing-zh-tw-weapon-presentation', 'weapon');
     }
     const nameSource = findOfficial(officialSources, presentation.nameOfficialSourceId, weaponRef, gameReleaseId);
-    if (!nameSource) return unavailable('missing-zh-tw-weapon-name', 'official');
+    const canonicalOfficialSource = findOfficial(officialSources, presentation.official?.officialSourceId, weaponRef, gameReleaseId);
+    if (!nameSource || !canonicalOfficialSource) return unavailable('missing-zh-tw-weapon-name', 'official');
     const view = presentation.weaponView;
     if (!Array.isArray(view.statSections) || !Array.isArray(view.attackProfileRefs)) return unavailable('invalid-weapon-presentation', 'weapon');
     const statSections = [];
@@ -414,14 +415,17 @@ function createSharedViewModel({ domains, gameReleaseId } = {}) {
     }
     const attackProfiles = resolveRecords(view.attackProfileRefs, 'attack-profile', gameReleaseId, recordByKey);
     if (!attackProfiles) return unavailable('incomplete-weapon-attack-bundle', 'weapon');
+    const termViews = new Map();
+    addTerms(termViews, weapon.payload.termRefs, recordByKey, termLocalizations, gameReleaseId);
     const sectionResult = orderedSections(presentation.detailSections ?? [], {
-      terms: new Map(), recordByKey, localizations: termLocalizations, termRules, gameReleaseId,
+      terms: termViews, recordByKey, localizations: termLocalizations, termRules, gameReleaseId,
     });
     if (!sectionResult.ok) return unavailable('invalid-weapon-sections', 'weapon');
     return {
       status: 'ready',
       name: presentation.name,
-      official: officialView(nameSource),
+      official: officialView(canonicalOfficialSource),
+      errata: canonicalOfficialSource ? exactErrata(presentation.errata, canonicalOfficialSource) : [],
       familyId,
       markId,
       markLabel: view.markLabel,
@@ -429,6 +433,8 @@ function createSharedViewModel({ domains, gameReleaseId } = {}) {
       comparisonHeading: view.comparisonHeading,
       note: view.note,
       sections: sectionResult.sections,
+      terms: [...termViews.values()].filter((term) => term.termRef),
+      termRules: [...termViews.values()].filter((term) => term.ruleId),
       statSections,
       attackProfiles,
       source: {
