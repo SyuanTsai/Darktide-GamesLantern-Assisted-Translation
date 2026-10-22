@@ -2,3 +2,7 @@ content/contracts/** text eol=lf
 scripts/w02/** text eol=lf
 tests/w02/** text eol=lf
 docs/contracts/** text eol=lf
+extension/shared/** text eol=lf
+scripts/shared/** text eol=lf
+tests/w10/** text eol=lf
+docs/W10_*.md text eol=lf
