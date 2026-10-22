@@ -57,6 +57,7 @@ Web 現有 `scripts/content/contract-release.mjs` 的 `validateVersion`／`valid
 ### 3.4 封裝與固定資料驗證
 
 - 新增 `scripts/shared/build-dev-extension.cjs`，沿用既有私有 temp 輸出及 sender／CSP 邊界。僅打包本地程式；host_permissions 為固定必要 origin，不加入任意設定欄位。
+- 新增 `extension/shared/client.js` 與 `extension/shared/baseline-provider.js`，提供 Chrome message 的純 JSON 序列化、呼叫端 raw bytes 複驗與 document-session 接線，以及固定 extension-local 原檔基線讀取。只在隔離 test build 包含 `tests/w10/mv3-harness.html/js`；正式網站 DOM／UI 仍屬 W11。測試用候選 baseline 另附 isolation-only／proposal provenance，不當作已選取或已正式發行的包。
 - 新增 `tests/w10/` 的現有 node:test／Chromium 測試與 `docs/W10_DELIVERY.md`；只為本包增加必要 package scripts。現有 package 沒有 lockfile，使用已安裝 Playwright／Chromium，不為計畫或測試自動升級／安裝套件。
 - 對 PR15 離線候選驗相同 manifest／四域 bytes、hash、資料版。測試用 version pointer 或測試封裝必須明標 isolation-only，不寫 selected／正式 source-handoff locks、不發布、不冒稱分配 `1.13.2.1`。目前沒有已發布此候選的正式 version 指標，不偽造正式 HTTPS rollout。
 
