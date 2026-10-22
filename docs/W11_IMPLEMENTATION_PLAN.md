@@ -32,9 +32,9 @@ Extension直接沿用W10九個shared模組與現有node:test／Chromium架構。
 
 新增 `web/shared-view.mjs`，以完整typed ref（含gameReleaseId）索引Source records及Web presentations／officialInputs／termLocalizations／termRules。只使用已給的繁中呈現及來源值；不修改raw JSON，不以英文／raw engine token作自家UI fallback。必要名稱／官方繁中缺漏就拒絕該record的顯示，保留可理解繁中失敗狀態。
 
-順序為名稱→同版官方描述→有則可見勘誤→可展開詳細說明；五節effects／conditions／calculation／notes／extra依序、空節省略、條列與標題保真。官方sourceText／resolvedText與勘誤分離，錨點失配不能呈現成有效勘誤。術語按termRef／context去重，同字異context不能錯合。
+順序為名稱→同版官方描述→有則可見勘誤→可展開詳細說明；五節effects／conditions／calculation／notes／extra對應「效果／條件／計算／補充說明／額外說明」，依序、空節省略、條列與標題保真。此UI標題依v17主文明確需求，不沿用舊內部文件generator的notes／extra短標題。官方sourceText／resolvedText與勘誤分離，錨點失配不能呈現成有效勘誤。術語按termRef／context去重，同字異context不能錯合。
 
-祝福family／mark／variant／tier／release精確選取；unknown tier不預選最高。LV變化同步官方文字、數字、時間、五節與可取得註記，defined與obtainable分開。武器按family分組、mark頁籤切換完整statSections／curves／attackChains／conditions。直接顯示Source已給值／節點／矩陣／單位；60/80比較點不變掉落範圍，不推算傷害、上下限或執行公式。只呈現來源支持的形狀，無新增文案owner。
+祝福family／mark／variant／tier／release精確選取；unknown tier不預選最高。Web可用精確blessingRef／variantRef／tier閱讀已批准內容而不提供weapon context，適用武器關係未驗證時明列unknown；一旦要求family／mark限定就必須有Source明確weapon refs，不能依ID猜關係。LV變化同步官方文字、數字、時間、五節與可取得註記，defined與obtainable分開。武器按family分組、mark頁籤切換完整statSections／curves／attackChains／conditions。直接顯示Source已給值／節點／矩陣／單位；60/80比較點不變掉落範圍，不推算傷害、上下限或執行公式。只呈現來源支持的形狀，無新增文案owner。
 
 ### 3.2 Web live app接線
 

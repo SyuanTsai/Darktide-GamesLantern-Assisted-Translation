@@ -1,0 +1,29 @@
+.w11-extension-panel,
+.w11-extension-details {
+  margin-block: 0.5rem;
+  color: inherit;
+  overflow-wrap: anywhere;
+}
+
+.w11-extension-details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.w11-extension-section,
+.w11-extension-errata,
+.w11-extension-terms {
+  margin-block: 0.5rem;
+}
+
+.w11-extension-section h4,
+.w11-extension-errata h4,
+.w11-extension-terms h4 {
+  margin-block: 0.25rem;
+}
+
+.w11-extension-details ul,
+.w11-extension-errata ul {
+  margin-block: 0.25rem;
+  padding-inline-start: 1.25rem;
+}
