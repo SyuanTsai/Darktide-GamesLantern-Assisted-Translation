@@ -34,7 +34,7 @@ Web 現有 `scripts/content/contract-release.mjs` 的 `validateVersion`／`valid
 
 ### 3.1 shared 契約與 patch matcher
 
-- 新增 `extension/shared/contract.js`、`extension/shared/loader.js`；沿既有 CJS／browser global dual export 慣例，不引進套件。
+- 新增 `extension/shared/contract.js`、`extension/shared/domains.js`、`extension/shared/loader.js`；沿既有 CJS／browser global dual export 慣例，不引進套件。`domains.js` 分離正式域內身分／引用閉包與 snapshot 跨表驗證，方便以純函式先驗證。
 - 驗 version schema 2、published 指標結構、manifest exact keys、Source repository／commits、major／features、canonical dataRevision、同 origin 的不可變路徑及依賴 DAG。支援必要 kinds 的閉包，不硬規定額外公告／game-change 必須存在，也不接受未支援的必需依賴。
 - 精確匹配可信本地 adapter 提供的 gameVersion／gameReleaseId／已識別 snapshot；無法判明、相互矛盾或不相容就回傳原站狀態，不能選全站最大版本。有效較舊指標可作合法回復，不能以數字遞增規則擋掉。
 - 固定下載 origin 來自本地 build 設定：正式為既有 `https://darktide.tw-syuan.com`，隔離 build 只用既有 preview origin。message、遠端 JSON、網頁不能指定 URL／改 origin；驗 redirect／最終 URL、HTTP、JSON MIME、UTF-8、大小、SHA256。
