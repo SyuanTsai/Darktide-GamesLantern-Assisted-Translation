@@ -91,8 +91,43 @@
       generation: 0,
       latestCheck: null,
       activeKey: null,
-      previousKey: null
+      previousKey: null,
+      updateSchedule: newUpdateSchedule()
     };
+  }
+
+  function newUpdateSchedule() {
+    return { lastSuccessAt: null, lastAttemptAt: null, lastFailureAt: null, failureCount: 0, nextRetryAt: null };
+  }
+
+  function normalizeTime(value, label) {
+    if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) {
+      fail('W10 update schedule ' + label + ' is corrupt', 'IDB_CORRUPT');
+    }
+    return value;
+  }
+
+  function normalizeUpdateSchedule(value) {
+    if (value === undefined) return newUpdateSchedule();
+    if (!isRecord(value) || Object.keys(value).some((key) => ![
+      'lastSuccessAt', 'lastAttemptAt', 'lastFailureAt', 'failureCount', 'nextRetryAt'
+    ].includes(key)) || !Number.isSafeInteger(value.failureCount) || value.failureCount < 0) {
+      fail('W10 update schedule is corrupt', 'IDB_CORRUPT');
+    }
+    return {
+      lastSuccessAt: normalizeTime(value.lastSuccessAt, 'lastSuccessAt'),
+      lastAttemptAt: normalizeTime(value.lastAttemptAt, 'lastAttemptAt'),
+      lastFailureAt: normalizeTime(value.lastFailureAt, 'lastFailureAt'),
+      failureCount: value.failureCount,
+      nextRetryAt: normalizeTime(value.nextRetryAt, 'nextRetryAt')
+    };
+  }
+
+  function normalizeTimestamp(value, label) {
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
+      fail(label + ' must be a non-negative finite timestamp', 'INVALID_SCHEDULE');
+    }
+    return value;
   }
 
   function normalizeState(value, identity) {
@@ -132,7 +167,8 @@
         identity: normalizeIdentity(value.latestCheck.identity)
       } : null,
       activeKey: value.activeKey,
-      previousKey: value.previousKey
+      previousKey: value.previousKey,
+      updateSchedule: normalizeUpdateSchedule(value.updateSchedule)
     };
   }
 
@@ -309,8 +345,9 @@
       openPromise = null;
     }
 
-    async function beginCheck(trustedIdentity) {
+    async function beginCheck(trustedIdentity, { attemptAt } = {}) {
       const identity = normalizeIdentity(trustedIdentity);
+      const startedAt = attemptAt === undefined ? null : normalizeTimestamp(attemptAt, 'attemptAt');
       const db = await openDatabase();
       return runTransaction(db, [STORE_NAMES.control, STORE_NAMES.staging], 'readwrite', 'begin check', (transaction, context) => {
         const control = transaction.objectStore(STORE_NAMES.control);
@@ -325,6 +362,7 @@
             const token = Object.freeze({ generation, expectedActiveKey: state.activeKey, identity });
             state.generation = generation;
             state.latestCheck = token;
+            if (startedAt !== null) state.updateSchedule.lastAttemptAt = startedAt;
             control.put(state);
             const keys = staging.getAllKeys();
             requestFailure(keys, transaction, context, 'list staging rows');
@@ -337,6 +375,76 @@
           } catch (error) {
             context.abort(error);
           }
+        };
+      });
+    }
+
+    async function getUpdateState(trustedIdentity) {
+      const identity = normalizeIdentity(trustedIdentity);
+      const db = await openDatabase();
+      return runTransaction(db, STORE_NAMES.control, 'readonly', 'read update schedule', (transaction, context) => {
+        const get = transaction.objectStore(STORE_NAMES.control).get(scopeKey(identity));
+        requestFailure(get, transaction, context, 'read update schedule');
+        get.onsuccess = () => {
+          try { context.setResult(normalizeState(requestResult(get), identity).updateSchedule); }
+          catch (error) { context.abort(error); }
+        };
+      });
+    }
+
+    async function recordCheckSuccess({ checkToken, identity: trustedIdentity, successAt } = {}) {
+      const identity = normalizeIdentity(trustedIdentity);
+      const token = normalizeCheckToken(checkToken, identity);
+      const completedAt = normalizeTimestamp(successAt, 'successAt');
+      const db = await openDatabase();
+      return runTransaction(db, STORE_NAMES.control, 'readwrite', 'record update success', (transaction, context) => {
+        const control = transaction.objectStore(STORE_NAMES.control);
+        const get = control.get(scopeKey(identity));
+        requestFailure(get, transaction, context, 'read update state for success');
+        get.onsuccess = () => {
+          try {
+            const state = normalizeState(requestResult(get), identity);
+            if (!checkMatches(state, token, identity)) return context.setResult(false);
+            state.latestCheck = null;
+            state.updateSchedule = {
+              lastSuccessAt: completedAt,
+              lastAttemptAt: state.updateSchedule.lastAttemptAt,
+              lastFailureAt: null,
+              failureCount: 0,
+              nextRetryAt: null
+            };
+            control.put(state);
+            context.setResult(true);
+          } catch (error) { context.abort(error); }
+        };
+      });
+    }
+
+    async function recordCheckFailure({ checkToken, identity: trustedIdentity, failedAt, nextRetryAt } = {}) {
+      const identity = normalizeIdentity(trustedIdentity);
+      const token = normalizeCheckToken(checkToken, identity);
+      const completedAt = normalizeTimestamp(failedAt, 'failedAt');
+      const retryAt = normalizeTimestamp(nextRetryAt, 'nextRetryAt');
+      const db = await openDatabase();
+      return runTransaction(db, STORE_NAMES.control, 'readwrite', 'record update failure', (transaction, context) => {
+        const control = transaction.objectStore(STORE_NAMES.control);
+        const get = control.get(scopeKey(identity));
+        requestFailure(get, transaction, context, 'read update state for failure');
+        get.onsuccess = () => {
+          try {
+            const state = normalizeState(requestResult(get), identity);
+            if (!checkMatches(state, token, identity)) return context.setResult(false);
+            state.latestCheck = null;
+            state.updateSchedule = {
+              lastSuccessAt: state.updateSchedule.lastSuccessAt,
+              lastAttemptAt: state.updateSchedule.lastAttemptAt,
+              lastFailureAt: completedAt,
+              failureCount: Math.min(Number.MAX_SAFE_INTEGER, state.updateSchedule.failureCount + 1),
+              nextRetryAt: retryAt
+            };
+            control.put(state);
+            context.setResult(true);
+          } catch (error) { context.abort(error); }
         };
       });
     }
@@ -424,7 +532,7 @@
       return { key, stageKey, record, verified };
     }
 
-    async function activateStaged(staged, identity, token, validPointers) {
+    async function activateStaged(staged, identity, token, validPointers, committedAt) {
       const db = await openDatabase();
       return runTransaction(db, [STORE_NAMES.control, STORE_NAMES.snapshots, STORE_NAMES.staging], 'readwrite',
         'activate snapshot', (transaction, context) => {
@@ -475,6 +583,15 @@
                     state.activeKey = newestKey;
                     state.previousKey = previousKey;
                     state.latestCheck = null;
+                    if (committedAt !== null) {
+                      state.updateSchedule = {
+                        lastSuccessAt: committedAt,
+                        lastAttemptAt: state.updateSchedule.lastAttemptAt,
+                        lastFailureAt: null,
+                        failureCount: 0,
+                        nextRetryAt: null
+                      };
+                    }
                     control.put(state);
                     staging.delete(staged.stageKey);
                     const oldStages = staging.getAllKeys();
@@ -513,13 +630,14 @@
       }
     }
 
-    async function commitSnapshot({ checkToken, identity: trustedIdentity, snapshot } = {}) {
+    async function commitSnapshot({ checkToken, identity: trustedIdentity, snapshot, completedAt } = {}) {
       const identity = normalizeIdentity(trustedIdentity);
       const token = normalizeCheckToken(checkToken, identity);
+      const committedAt = completedAt === undefined ? null : normalizeTimestamp(completedAt, 'completedAt');
       const staged = await stageSnapshot(snapshot, identity, token);
       try {
         const validPointers = await inspectValidPointers(identity);
-        return await activateStaged(staged, identity, token, validPointers);
+        return await activateStaged(staged, identity, token, validPointers, committedAt);
       } catch (error) {
         await deleteStaging(staged.stageKey);
         throw error;
@@ -592,7 +710,10 @@
       cleanup,
       close,
       commitSnapshot,
-      readSnapshot
+      getUpdateState,
+      readSnapshot,
+      recordCheckFailure,
+      recordCheckSuccess
     });
   }
 

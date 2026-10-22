@@ -155,6 +155,32 @@ test('InterT10_RealChromiumIndexedDbStagesAndAtomicallyPromotesVerifiedSnapshots
     assert.equal(result.stagingRowsAfterCleanup, 0);
     assert.equal(result.stagingCorruptionWasInjected, true);
     assert.equal(result.otherReleaseAfterReopen, '9.8.8.1');
+    const scheduleResult = await page.evaluate(async (identity) => {
+      const firstStore = window.W10SharedSnapshotStore.createSnapshotStore();
+      const firstToken = await firstStore.beginCheck(identity, { attemptAt: 1010 });
+      const failureRecorded = await firstStore.recordCheckFailure({
+        checkToken: firstToken, identity, failedAt: 1020, nextRetryAt: 2020
+      });
+      const persisted = await firstStore.getUpdateState(identity);
+      firstStore.close();
+      const reopened = window.W10SharedSnapshotStore.createSnapshotStore();
+      const afterReopen = await reopened.getUpdateState(identity);
+      const nextToken = await reopened.beginCheck(identity, { attemptAt: 3030 });
+      const staleWrite = await reopened.recordCheckSuccess({ checkToken: firstToken, identity, successAt: 4040 });
+      const currentWrite = await reopened.recordCheckSuccess({ checkToken: nextToken, identity, successAt: 5050 });
+      const finalState = await reopened.getUpdateState(identity);
+      reopened.close();
+      return { failureRecorded, persisted, afterReopen, staleWrite, currentWrite, finalState };
+    }, r1.identity);
+    assert.equal(scheduleResult.failureRecorded, true);
+    assert.equal(scheduleResult.persisted.lastAttemptAt, 1010);
+    assert.equal(scheduleResult.persisted.lastFailureAt, 1020);
+    assert.equal(scheduleResult.persisted.nextRetryAt, 2020);
+    assert.deepEqual(scheduleResult.afterReopen, scheduleResult.persisted);
+    assert.equal(scheduleResult.staleWrite, false, 'an older generation overwrote the newer persisted schedule');
+    assert.equal(scheduleResult.currentWrite, true);
+    assert.equal(scheduleResult.finalState.lastSuccessAt, 5050);
+    assert.equal(scheduleResult.finalState.failureCount, 0);
     t.diagnostic(JSON.stringify({
       browserVersion: context.browser().version(),
       playwrightVersion: runtime.playwrightVersion,
@@ -163,6 +189,7 @@ test('InterT10_RealChromiumIndexedDbStagesAndAtomicallyPromotesVerifiedSnapshots
       controlledAbort: 'synthetic IDB transaction abort; not actual disk quota exhaustion',
       activeAfterReopen: result.activeAfterReopen,
       fallbackAfterCorruption: result.fallbackAfterCorruption,
+      persistentSchedule: scheduleResult,
       snapshotRowsAfterCleanup: result.snapshotRowsAfterCleanup,
       stagingRowsAfterCleanup: result.stagingRowsAfterCleanup
     }, null, 2));
@@ -170,5 +197,39 @@ test('InterT10_RealChromiumIndexedDbStagesAndAtomicallyPromotesVerifiedSnapshots
     if (context) await context.close();
     if (server && server.listening) await new Promise((resolve) => server.close(resolve));
     removePrivateProfileRoot(profileRoot);
+  }
+});
+
+test('InterT20_ExplicitBrowserRuntimeWorksWithoutTaskSiblingPathManifest', () => {
+  // Scenario: Given explicit Playwright and Chromium paths, the helper runs from a clean temporary checkout.
+  // Purpose: Keep task-local runtime-paths.json optional for fresh clones while preserving the private browser runtime.
+  const runtime = loadRuntime();
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'syp-w10-runtime-clean-'));
+  const helperDirectory = path.join(temporaryRoot, 'repo', 'tests', 'w10');
+  fs.mkdirSync(helperDirectory, { recursive: true });
+  const isolatedHelperPath = path.join(helperDirectory, 'browser-runtime.cjs');
+  fs.copyFileSync(path.resolve(__dirname, 'browser-runtime.cjs'), isolatedHelperPath);
+  const pathsFile = path.resolve(helperDirectory, '..', '..', '..', 'runtime-paths.json');
+  const previousPlaywrightRoot = process.env.SYP_W10_PLAYWRIGHT_ROOT;
+  const previousChromium = process.env.SYP_W10_CHROMIUM_EXE;
+  try {
+    assert.equal(fs.existsSync(pathsFile), false, 'temporary clean checkout unexpectedly has runtime-paths.json');
+    process.env.SYP_W10_PLAYWRIGHT_ROOT = runtime.playwrightRoot;
+    process.env.SYP_W10_CHROMIUM_EXE = runtime.executablePath;
+    const isolatedRuntime = require(isolatedHelperPath).loadRuntime();
+    assert.equal(isolatedRuntime.playwrightVersion, runtime.playwrightVersion);
+    assert.equal(isolatedRuntime.executablePath, runtime.executablePath);
+  } finally {
+    if (previousPlaywrightRoot === undefined) delete process.env.SYP_W10_PLAYWRIGHT_ROOT;
+    else process.env.SYP_W10_PLAYWRIGHT_ROOT = previousPlaywrightRoot;
+    if (previousChromium === undefined) delete process.env.SYP_W10_CHROMIUM_EXE;
+    else process.env.SYP_W10_CHROMIUM_EXE = previousChromium;
+    const temporaryBase = path.resolve(os.tmpdir());
+    const resolvedTemporaryRoot = path.resolve(temporaryRoot);
+    if (!resolvedTemporaryRoot.startsWith(temporaryBase + path.sep)
+      || !path.basename(resolvedTemporaryRoot).startsWith('syp-w10-runtime-clean-')) {
+      throw new Error('Refusing to remove a path outside the named W10 runtime test directory');
+    }
+    fs.rmSync(temporaryRoot, { recursive: true, force: true, maxRetries: 3 });
   }
 });

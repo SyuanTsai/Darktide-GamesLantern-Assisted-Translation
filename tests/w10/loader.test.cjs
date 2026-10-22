@@ -3,9 +3,15 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const { webcrypto } = require('node:crypto');
-const { downloadSnapshot, verifyStoredSnapshot } = require('../../extension/shared/loader.js');
+const {
+  downloadSnapshot,
+  downloadSnapshotFromVersion,
+  fetchVersionIndex,
+  sameReleasePointer,
+  verifyStoredSnapshot
+} = require('../../extension/shared/loader.js');
 const { CORE_DOMAIN_KINDS, resealManifest } = require('./fixtures.cjs');
-const { makeFetch, makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
+const { makeFetch, makeResponse, makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
 
  test('UnitT10_DownloadsAndValidatesACompleteIsolatedFourDomainPackage', async () => {
   // Scenario: Given an isolated synthetic index and a complete four-domain package with matching pins.
@@ -302,4 +308,102 @@ test('UnitT18_IgnoresUnneededGameChangeFileWhileSelectingTheFourCoreDependencyCl
   assert.equal(snapshot.domains.size, 4);
   assert.equal(fixture.fetchImpl.calls.length, 6);
   assert.ok(!fixture.fetchImpl.calls.some(({ url }) => new URL(url).pathname.endsWith('/domains/game-changes.json')));
+});
+
+test('UnitT17_RejectsNonUtf8CharsetEvenWithWhitespaceAroundMimeParameter', async () => {
+  // Scenario: Given valid version bytes served with a non-UTF-8 charset parameter containing optional whitespace.
+  // Purpose: Enforce the loader UTF-8 contract for every legal MIME parameter spelling.
+  const fixture = makeSyntheticPackage();
+  const response = fixture.resources.get('/version.json');
+  const fetchImpl = makeFetch(fixture.resources, {
+    '/version.json': { ...response, contentType: 'application/json; charset = iso-8859-1' }
+  });
+
+  // When the first fixed-origin JSON response is checked.
+  await assert.rejects(() => downloadSnapshot({ fetchImpl, identity: fixture.identity, cryptoApi: webcrypto }), /charset.*UTF-8/i);
+});
+
+test('UnitT19_FetchesVersionOnceAndDownloadsFromTheValidatedVersionBytes', async () => {
+  // Scenario: Given a valid isolated version pointer, a caller separates its one index request from package transfer.
+  // Purpose: Reuse validated version bytes and compare the entire release pointer tuple before deciding a cache is unchanged.
+  const fixture = makeSyntheticPackage();
+  const checked = await fetchVersionIndex({ fetchImpl: fixture.fetchImpl, identity: fixture.identity, cryptoApi: webcrypto });
+  assert.equal(fixture.fetchImpl.calls.length, 1);
+  assert.equal(sameReleasePointer(checked.release, fixture.version.game_releases[0]), true);
+  for (const [field, value] of [
+    ['content_version', '9.8.7.999'],
+    ['data_revision', 'f'.repeat(64)],
+    ['manifest_path', '/data/other/manifest.json'],
+    ['manifest_sha256', 'e'.repeat(64)]
+  ]) {
+    assert.equal(sameReleasePointer(checked.release, { ...checked.release, [field]: value }), false,
+      'release pointer comparison ignored ' + field);
+  }
+  const snapshot = await downloadSnapshotFromVersion({
+    fetchImpl: fixture.fetchImpl,
+    identity: fixture.identity,
+    versionBytes: checked.versionBytes,
+    cryptoApi: webcrypto
+  });
+  assert.equal(snapshot.files.size, 4);
+  assert.equal(fixture.fetchImpl.calls.length, 6, 'package transfer fetched version.json again');
+  assert.ok(fixture.fetchImpl.calls.every(({ url }) => new URL(url).origin === 'https://darktide.tw-syuan.com'),
+    'version-derived download escaped the fixed origin');
+});
+
+test('UnitT20_EnforcesTimeoutAndCancelsAReaderAbortedMidstream', async (t) => {
+  // Scenario: Given a stalled index request or a domain stream interrupted after its first chunk.
+  // Purpose: Exercise bounded fetch timeout and reader cancellation without waiting for wall-clock timeout.
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const timedOut = makeSyntheticPackage();
+    let started = 0;
+    let requestSignal;
+    const stalledFetch = (input, init) => {
+      if (new URL(String(input)).pathname !== '/version.json') return timedOut.fetchImpl(input, init);
+      started += 1;
+      requestSignal = init.signal;
+      return new Promise(() => {});
+    };
+    const timeoutPromise = downloadSnapshot({ fetchImpl: stalledFetch, identity: timedOut.identity, cryptoApi: webcrypto });
+    await Promise.resolve();
+    assert.equal(started, 1, 'timeout was triggered before the fixed-origin request started');
+    t.mock.timers.tick(30000);
+    await assert.rejects(timeoutPromise, (error) => error.code === 'TIMEOUT');
+    assert.equal(requestSignal.aborted, true, 'timeout did not abort the in-flight fixed-origin request');
+  } finally {
+    t.mock.timers.reset();
+  }
+
+  const fixture = makeSyntheticPackage();
+  const firstFile = fixture.manifest.files[0];
+  const fileUrl = '/data/' + fixture.manifest.dataRevision + '/' + firstFile.path;
+  const controller = new AbortController();
+  let requested;
+  const requestedPromise = new Promise((resolve) => { requested = resolve; });
+  let cancelled = 0;
+  const stream = new ReadableStream({
+    start(streamController) {
+      streamController.enqueue(new Uint8Array(fixture.rawFiles.get(firstFile.path)));
+    },
+    pull() { return new Promise(() => {}); },
+    cancel() { cancelled += 1; }
+  });
+  const fetchImpl = async (input, init) => {
+    if (new URL(String(input)).pathname === fileUrl) {
+      requested();
+      return makeResponse(String(input), {
+        bodyStream: stream,
+        bytes: fixture.rawFiles.get(firstFile.path),
+        contentType: 'application/json'
+      });
+    }
+    return fixture.fetchImpl(input, init);
+  };
+  const abortPromise = downloadSnapshot({ fetchImpl, identity: fixture.identity, cryptoApi: webcrypto, signal: controller.signal });
+  await requestedPromise;
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort();
+  await assert.rejects(abortPromise, (error) => error.code === 'ABORTED');
+  assert.ok(cancelled > 0, 'bounded reader did not cancel the aborted stream');
 });

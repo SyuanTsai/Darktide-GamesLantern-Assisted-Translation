@@ -146,7 +146,7 @@
     if (mediaType !== 'application/json') fail(label + ' MIME type must be application/json');
     for (const parameter of parameters) {
       const match = /^charset\s*=\s*["']?([^"']+)["']?$/.exec(parameter);
-      if (parameter.startsWith('charset=') && (!match || !['utf-8', 'utf8'].includes(match[1]))) {
+      if (/^charset\s*=/i.test(parameter) && (!match || !['utf-8', 'utf8'].includes(match[1]))) {
         fail(label + ' MIME charset must be UTF-8');
       }
     }
@@ -184,6 +184,7 @@
       while (true) {
         if (signal && signal.aborted) fail('snapshot download cancelled', 'ABORTED');
         const result = await reader.read();
+        if (signal && signal.aborted) fail('snapshot download cancelled', 'ABORTED');
         if (result.done) break;
         const chunk = result.value instanceof Uint8Array ? result.value : new Uint8Array(result.value);
         if (chunk.byteLength === 0) continue;
@@ -316,41 +317,6 @@
     });
   }
 
-  async function downloadSnapshot({ fetchImpl = globalThis.fetch, identity, cryptoApi = globalThis.crypto, signal } = {}) {
-    requireDependencies();
-    const normalizedIdentity = requireIdentity(identity);
-    return withDeadline(signal, async (requestSignal) => {
-      const total = { value: 0, limit: LIMITS.snapshotBytes };
-      const versionUrl = fixedUrl('/version.json');
-      const versionBytes = await fetchJsonBytes(fetchImpl, versionUrl, 'version index', LIMITS.versionBytes, null, requestSignal);
-      const { release } = validateVersionBytes(versionBytes, normalizedIdentity, contract);
-      const manifestPath = canonicalManifestPath(release);
-      const manifestUrl = fixedUrl(manifestPath);
-      const manifestBytes = await fetchJsonBytes(fetchImpl, manifestUrl, 'manifest', LIMITS.manifestBytes, total, requestSignal);
-      if (await sha256(manifestBytes, cryptoApi) !== release.manifest_sha256) fail('manifest SHA-256 does not match the selected version pointer');
-      const version = decodeJson(versionBytes, 'version index');
-      const manifest = decodeJson(manifestBytes, 'manifest');
-      await contract.validateManifest(manifest, { cryptoApi });
-      const matchedRelease = await contract.matchReleaseIdentity(version, manifest, {
-        gameVersion: normalizedIdentity.gameVersion,
-        gameReleaseId: normalizedIdentity.gameReleaseId
-      }, { cryptoApi });
-      if (!matchedRelease || matchedRelease.manifest_path !== manifestPath) throw noCompatibleRelease(normalizedIdentity.gameVersion);
-      const selectedFiles = await selectCoreFiles(manifest, cryptoApi);
-      if (manifestBytes.byteLength + selectedFiles.reduce((sum, row) => sum + row.sizeBytes, 0) > LIMITS.snapshotBytes) {
-        fail('snapshot declared size exceeds the 16 MiB total byte limit');
-      }
-
-      const fileBytes = new Map();
-      for (const row of selectedFiles) {
-        const url = filePathForManifest(manifestPath, row.path);
-        const bytes = await fetchJsonBytes(fetchImpl, url, 'domain file ' + row.path, LIMITS.fileBytes, total, requestSignal);
-        fileBytes.set(row.path, bytes);
-      }
-      return inspectRawSnapshot({ versionBytes, manifestBytes, fileBytes, identity: normalizedIdentity, cryptoApi });
-    });
-  }
-
   async function verifyStoredSnapshot({ versionBytes, manifestBytes, files, identity, cryptoApi = globalThis.crypto, signal } = {}) {
     requireDependencies();
     const normalizedIdentity = requireIdentity(identity);
@@ -363,9 +329,90 @@
     }));
   }
 
+  function sameReleasePointer(left, right) {
+    if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
+    return ['content_version', 'data_revision', 'manifest_path', 'manifest_sha256']
+      .every((field) => left[field] === right[field]);
+  }
+
+  async function fetchVersionIndex({ fetchImpl = globalThis.fetch, identity, cryptoApi = globalThis.crypto, signal } = {}) {
+    requireDependencies();
+    const normalizedIdentity = requireIdentity(identity);
+    return withDeadline(signal, async (requestSignal) => {
+      const versionBytes = await fetchJsonBytes(fetchImpl, fixedUrl('/version.json'), 'version index',
+        LIMITS.versionBytes, null, requestSignal);
+      const { version, release } = validateVersionBytes(versionBytes, normalizedIdentity, contract);
+      canonicalManifestPath(release);
+      return { version, versionBytes, release, identity: normalizedIdentity };
+    });
+  }
+
+  async function downloadPackageFromVersion({ fetchImpl, identity, versionBytes, cryptoApi, signal }) {
+    const normalizedIdentity = requireIdentity(identity);
+    const versionRaw = asBytes(versionBytes, 'validated version index');
+    const { version, release } = validateVersionBytes(versionRaw, normalizedIdentity, contract);
+    const manifestPath = canonicalManifestPath(release);
+    const total = { value: 0, limit: LIMITS.snapshotBytes };
+    const manifestBytes = await fetchJsonBytes(fetchImpl, fixedUrl(manifestPath), 'manifest',
+      LIMITS.manifestBytes, total, signal);
+    if (await sha256(manifestBytes, cryptoApi) !== release.manifest_sha256) {
+      fail('manifest SHA-256 does not match the selected version pointer');
+    }
+    const manifest = decodeJson(manifestBytes, 'manifest');
+    await contract.validateManifest(manifest, { cryptoApi });
+    const matchedRelease = await contract.matchReleaseIdentity(version, manifest, {
+      gameVersion: normalizedIdentity.gameVersion,
+      gameReleaseId: normalizedIdentity.gameReleaseId
+    }, { cryptoApi });
+    if (!matchedRelease || matchedRelease.manifest_path !== manifestPath) {
+      throw noCompatibleRelease(normalizedIdentity.gameVersion);
+    }
+    const selectedFiles = await selectCoreFiles(manifest, cryptoApi);
+    if (manifestBytes.byteLength + selectedFiles.reduce((sum, row) => sum + row.sizeBytes, 0) > LIMITS.snapshotBytes) {
+      fail('snapshot declared size exceeds the 16 MiB total byte limit');
+    }
+    const fileBytes = new Map();
+    for (const row of selectedFiles) {
+      const url = filePathForManifest(manifestPath, row.path);
+      fileBytes.set(row.path, await fetchJsonBytes(fetchImpl, url, 'domain file ' + row.path,
+        LIMITS.fileBytes, total, signal));
+    }
+    return inspectRawSnapshot({
+      versionBytes: versionRaw,
+      manifestBytes,
+      fileBytes,
+      identity: normalizedIdentity,
+      cryptoApi
+    });
+  }
+
+  async function downloadSnapshotFromVersion({ fetchImpl = globalThis.fetch, identity, versionBytes,
+    cryptoApi = globalThis.crypto, signal } = {}) {
+    requireDependencies();
+    const normalizedIdentity = requireIdentity(identity);
+    return withDeadline(signal, (requestSignal) => downloadPackageFromVersion({
+      fetchImpl, identity: normalizedIdentity, versionBytes, cryptoApi, signal: requestSignal
+    }));
+  }
+
+  async function downloadSnapshot({ fetchImpl = globalThis.fetch, identity, cryptoApi = globalThis.crypto, signal } = {}) {
+    requireDependencies();
+    const normalizedIdentity = requireIdentity(identity);
+    return withDeadline(signal, async (requestSignal) => {
+      const versionBytes = await fetchJsonBytes(fetchImpl, fixedUrl('/version.json'), 'version index',
+        LIMITS.versionBytes, null, requestSignal);
+      return downloadPackageFromVersion({
+        fetchImpl, identity: normalizedIdentity, versionBytes, cryptoApi, signal: requestSignal
+      });
+    });
+  }
+
   return Object.freeze({
     LIMITS,
     downloadSnapshot,
+    downloadSnapshotFromVersion,
+    fetchVersionIndex,
+    sameReleasePointer,
     verifyStoredSnapshot
   });
 });

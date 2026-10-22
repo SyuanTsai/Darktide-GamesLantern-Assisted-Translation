@@ -50,7 +50,7 @@ Web 現有 `scripts/content/contract-release.mjs` 的 `validateVersion`／`valid
 
 ### 3.3 背景協調與 document 固定版本
 
-- 新增 `extension/shared/service-worker.js`、`extension/shared/document-session.js`。跨頁相同 release 的 in-flight 檢查合併；首次活動、距上次成功檢查滿 24 小時及手動才查小版本檔，失敗有限退避，不建立常駐輪詢。
+- 新增 `extension/shared/update-coordinator.js`、`extension/shared/service-worker.js`、`extension/shared/document-session.js`。協調邏輯獨立於薄型 worker message 接線，跨頁相同 release 的 in-flight 檢查合併；首次活動、距上次成功檢查滿 24 小時及手動才查小版本檔，失敗有限退避，不建立常駐輪詢。成功／失敗檢查排程以 release 分區持久保留，不依賴 worker globals。
 - 依現有 sender guard 與固定 allowlist 驗 Extension 身分及本地 adapter 呼叫；不接受網頁任意 URL 或程式。真網站 DOM 辨識及 UI 接線仍留 W11。
 - document 第一次初始化的 promise 固定快照；同文件 SPA 操作不熱換新版、不強刷頁面。patch 變得不相容時停止該組翻譯；新文件才重新選目前完整快照。
 
