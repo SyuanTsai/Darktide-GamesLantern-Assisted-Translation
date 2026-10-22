@@ -34,24 +34,24 @@ function release(gameReleaseId, gameVersion, snapshotId, marker) {
     gameBuild: 'isolated-test-build-' + marker,
     gameReleaseId,
     gameVersion,
-    releaseOrder: gameVersion === GAME_VERSION ? 2 : 1,
+    releaseOrder: marker === 'a' ? 1 : 2,
     snapshot: snapshot(snapshotId, marker)
   };
 }
 
-function makeDomain(kind, changes = {}) {
+function makeDomain(kind, changes = {}, identity = { gameVersion: GAME_VERSION, gameReleaseId: GAME_RELEASE_ID }) {
   const document = {
     schemaVersion: 'w08-shared-domain/1.0.0',
     kind,
-    gameReleaseId: GAME_RELEASE_ID,
+    gameReleaseId: identity.gameReleaseId,
     source: {
       repository: SOURCE_REPOSITORY,
       gameReleases: [
         release('fixture:w10-history', '9.8.6', HISTORICAL_SNAPSHOT_ID, 'a'),
-        release(GAME_RELEASE_ID, GAME_VERSION, PRIMARY_SNAPSHOT_ID, 'c')
+        release(identity.gameReleaseId, identity.gameVersion, PRIMARY_SNAPSHOT_ID, 'c')
       ],
       sourceSnapshots: [
-        { gameReleaseId: GAME_RELEASE_ID, snapshot: snapshot(ALTERNATE_SNAPSHOT_ID, 'e') }
+        { gameReleaseId: identity.gameReleaseId, snapshot: snapshot(ALTERNATE_SNAPSHOT_ID, 'e') }
       ],
       sourceRefs: [],
       records: [],
@@ -73,16 +73,18 @@ function makeDomain(kind, changes = {}) {
   return typeof changes === 'function' ? changes(document) ?? document : document;
 }
 
-function makeSyntheticPackage({ mutateManifest, mutateDomains, mutateFileBytes } = {}) {
+function makeSyntheticPackage({ mutateManifest, mutateDomains, mutateFileBytes, gameVersion = GAME_VERSION,
+  gameReleaseId = GAME_RELEASE_ID } = {}) {
   const domains = new Map();
   for (const kind of CORE_DOMAIN_KINDS) {
-    domains.set(kind, makeDomain(kind, mutateDomains ? (document) => mutateDomains(kind, document) : undefined));
+    domains.set(kind, makeDomain(kind, mutateDomains ? (document) => mutateDomains(kind, document) : undefined,
+      { gameVersion, gameReleaseId }));
   }
 
   const manifest = makeManifest();
-  manifest.gameReleaseId = GAME_RELEASE_ID;
-  manifest.gameVersion = GAME_VERSION;
-  manifest.contentVersion = GAME_VERSION + '.1';
+  manifest.gameReleaseId = gameReleaseId;
+  manifest.gameVersion = gameVersion;
+  manifest.contentVersion = gameVersion + '.1';
   manifest.compatibility.gameSnapshotRefs = [
     PRIMARY_SNAPSHOT_ID,
     ALTERNATE_SNAPSHOT_ID,
@@ -102,10 +104,10 @@ function makeSyntheticPackage({ mutateManifest, mutateDomains, mutateFileBytes }
   const manifestBytes = Buffer.from(JSON.stringify(manifest), 'utf8');
   const manifestSha256 = sha256(manifestBytes);
   const version = makeVersionForManifest(manifest);
-  const releaseRow = version.game_releases.find((row) => row.game_version === GAME_VERSION);
+  const releaseRow = version.game_releases.find((row) => row.game_version === gameVersion);
   releaseRow.manifest_sha256 = manifestSha256;
   version.data_revision = manifest.dataRevision;
-  version.game_version = GAME_VERSION;
+  version.game_version = gameVersion;
   const versionBytes = Buffer.from(JSON.stringify(version), 'utf8');
   const manifestPath = releaseRow.manifest_path;
   const dataDirectory = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1);
@@ -127,7 +129,7 @@ function makeSyntheticPackage({ mutateManifest, mutateDomains, mutateFileBytes }
     rawFiles,
     version,
     versionBytes,
-    identity: { gameVersion: GAME_VERSION, gameReleaseId: GAME_RELEASE_ID }
+    identity: { gameVersion, gameReleaseId }
   };
 }
 
