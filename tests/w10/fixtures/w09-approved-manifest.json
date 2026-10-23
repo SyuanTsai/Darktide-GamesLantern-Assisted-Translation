@@ -1,0 +1,62 @@
+{
+  "changeIndexPath": null,
+  "compatibility": {
+    "dataContractMajor": 2,
+    "gameSnapshotRefs": [
+      "chainaxe-w07-static-1.13.2-ba6c148",
+      "chainaxe-weapons-1.13.2-37-files",
+      "psyker-cited-code-1.13.1-15-files",
+      "psyker-skills-blessings-1.13.2-18-files"
+    ],
+    "requiredFeatures": [
+      "official-errata-details-v1",
+      "official-native-localizations-v1",
+      "blessing-tier-presentations-v1"
+    ]
+  },
+  "contentVersion": "1.13.2.1",
+  "dataRevision": "808c815b78f71adaefe2c29095e9bafbeb8c69415d50f6de50a41093664dbd62",
+  "files": [
+    {
+      "dependencies": [],
+      "kind": "blessings",
+      "path": "domains/blessings.json",
+      "sha256": "3e72d21be03b7beb966558665b7a4eb3fb389ea23fab8cf7c1cf722a409b22b5",
+      "sizeBytes": 113990
+    },
+    {
+      "dependencies": [],
+      "kind": "skills",
+      "path": "domains/skills.json",
+      "sha256": "108628d9c9262541bd95741fcc0ef52b08ff874d02ce11eb0684bb52ef6da449",
+      "sizeBytes": 165051
+    },
+    {
+      "dependencies": [],
+      "kind": "terms",
+      "path": "domains/terms.json",
+      "sha256": "602cb6aca68e6add34aaa8eb0552efbba66324a97e7c4fbc406f03c0932b78f6",
+      "sizeBytes": 124557
+    },
+    {
+      "dependencies": [],
+      "kind": "weapons",
+      "path": "domains/weapons.json",
+      "sha256": "17a554bfc2a4a444b8e4cf89de64e698182deb1936ccebebd10f37f64c4f617a",
+      "sizeBytes": 6662191
+    }
+  ],
+  "gameReleaseId": "darktide:1.13.2",
+  "gameVersion": "1.13.2",
+  "schemaVersion": "2.0.0",
+  "source": {
+    "commit": "fccda635f392b5259c883b85603acdf639bb83fb",
+    "manifestSha256": "eed060d50871b8cde26510b100ff76c1479863e9c7e52001993af252c11d0118",
+    "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+    "sourceRevision": "1fdd0881633c623ed8f5ad294613a0747d675e1dad2266b844ce42bf72f73520"
+  },
+  "web": {
+    "authoringCommit": "b4b11ec055adad42bb6732f833946886446e89cd",
+    "compilerCommit": "1aadf6652838bcee4c282c884b5363be8d0ecb87"
+  }
+}

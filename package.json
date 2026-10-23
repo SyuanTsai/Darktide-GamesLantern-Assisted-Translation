@@ -12,7 +12,12 @@
     "test:w01:live-preview": "node --test tests/w01/live-preview.test.cjs",
     "test:w01:pending-preview": "node --test tests/w01/pending-preview-renderer.test.cjs",
     "validate:w02:contract": "node scripts/w02/contract-conformance.mjs",
-    "test:w01": "node --test tests/w01/loader.test.cjs tests/w01/build.test.cjs tests/w01/idb-local.test.cjs tests/w01/idb-integration.test.cjs tests/w01/preview-integration.test.cjs tests/w01/shared-package.test.cjs tests/w01/pending-preview-renderer.test.cjs"
+    "test:w01": "node --test tests/w01/loader.test.cjs tests/w01/build.test.cjs tests/w01/idb-local.test.cjs tests/w01/idb-integration.test.cjs tests/w01/preview-integration.test.cjs tests/w01/shared-package.test.cjs tests/w01/pending-preview-renderer.test.cjs",
+    "build:w10:dev": "node scripts/shared/build-dev-extension.cjs",
+    "test:w10:unit": "node --test-concurrency=1 --test tests/w10/contract.test.cjs tests/w10/domains.test.cjs tests/w10/loader.test.cjs tests/w10/message.test.cjs tests/w10/session.test.cjs tests/w10/store.test.cjs tests/w10/update-coordinator.test.cjs tests/w10/build.test.cjs",
+    "test:w10:idb": "node --test-concurrency=1 --test tests/w10/idb-integration.test.cjs",
+    "test:w10:mv3": "node --test-concurrency=1 --test tests/w10/mv3-integration.test.cjs",
+    "test:w10": "npm run test:w10:unit && npm run test:w10:idb && npm run test:w10:mv3"
   },
   "devDependencies": {
     "playwright": "1.62.1"
