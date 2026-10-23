@@ -68,11 +68,14 @@ test('UnitT20_IsolatedBuildPinsPreviewAndIncludesOnlyOptInLocalHarness', () => {
         'manifest.json',
         'shared/contract.js', 'shared/domains.js', 'shared/loader.js', 'shared/snapshot-store.js',
         'shared/update-coordinator.js', 'shared/document-session.js', 'shared/baseline-provider.js',
-        'shared/client.js', 'shared/service-worker.js'
+        'shared/client.js', 'shared/service-worker.js', 'shared/native-identity.js', 'shared/view-model.js',
+        'shared/presentation.js', 'shared/dom-adapter.js', 'shared/dom-controller.js', 'shared/content-entry.js',
+        'shared/display.css'
       ]);
       if (result.includeTestHarness) {
         allowedFiles.add('w10-harness.html');
         allowedFiles.add('w10-harness.js');
+        allowedFiles.add('test-support/native-proof-registry.js');
       }
       if (process.env.SYP_W10_APPROVED_PACKAGE_DIR) {
         for (const file of [

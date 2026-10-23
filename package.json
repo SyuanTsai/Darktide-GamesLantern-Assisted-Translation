@@ -17,7 +17,12 @@
     "test:w10:unit": "node --test-concurrency=1 --test tests/w10/contract.test.cjs tests/w10/domains.test.cjs tests/w10/loader.test.cjs tests/w10/message.test.cjs tests/w10/session.test.cjs tests/w10/store.test.cjs tests/w10/update-coordinator.test.cjs tests/w10/build.test.cjs",
     "test:w10:idb": "node --test-concurrency=1 --test tests/w10/idb-integration.test.cjs",
     "test:w10:mv3": "node --test-concurrency=1 --test tests/w10/mv3-integration.test.cjs",
-    "test:w10": "npm run test:w10:unit && npm run test:w10:idb && npm run test:w10:mv3"
+    "test:w10": "npm run test:w10:unit && npm run test:w10:idb && npm run test:w10:mv3",
+    "build:w11:dev": "node scripts/shared/build-dev-extension.cjs",
+    "test:w11:unit": "node --test-concurrency=1 --test tests/w11/build.test.cjs tests/w11/content-entry.test.cjs tests/w11/message.test.cjs tests/w11/native-identity.test.cjs tests/w11/presentation.test.cjs",
+    "test:w11:dom": "node --test-concurrency=1 --test tests/w11/dom-integration.test.cjs",
+    "test:w11:mv3": "node --test-concurrency=1 --test tests/w11/mv3-integration.test.cjs",
+    "test:w11": "npm run test:w11:unit && npm run test:w11:dom && npm run test:w11:mv3"
   },
   "devDependencies": {
     "playwright": "1.62.1"
