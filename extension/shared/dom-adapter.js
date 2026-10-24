@@ -17,7 +17,7 @@
   const WEAPON_UNITS = Object.freeze({ percent: '%', ratio: '比例', seconds: '秒', s: '秒', count: '次',
     meters: '公尺', point: '點', 'dodge-count': '次閃避', 'stamina-point': '耐力點',
     'stamina-point-per-second': '耐力點／秒', 'normalized-speed-per-second': '標準化速度／秒',
-    'attack-power-point': '攻擊威力點', 'cleave-power-point': '鋸擊威力點' });
+    'attack-power-point': '攻擊威力點', 'cleave-power-point': '鋸擊威力點', 'instance-count': '彈藥單位' });
   const WEAPON_STAT_LABELS = Object.freeze({ chainaxe_dps_stat: '傷害輸出', chainaxe_armor_pierce_stat: '破甲',
     chainaxe_mobility_stat: '移動性', chainaxe_defence_stat: '防禦', chainaxe_sawing_stat: '鏈鋸階段',
     damage_stat: '傷害', cleave_stat: '劈砍', impact_stat: '衝擊' });
@@ -29,12 +29,12 @@
     sprint_sideway_acceleration: '側向衝刺加速', sprint_sideway_deceleration: '側向衝刺減速',
     sprint_forward_acceleration: '向前衝刺加速', sprint_speed_mod: '衝刺速度修正', attack: '攻擊威力',
     damage: '傷害', armor_damage_modifier: '護甲傷害修正' });
-  const ATTACK_MODES = Object.freeze({ light: '輕攻擊', heavy: '重攻擊', push: '推擊', block: '格擋', special: '特殊動作' });
+  const ATTACK_MODES = Object.freeze({ light: '輕攻擊', heavy: '重攻擊', push: '推擊', block: '格擋', special: '特殊動作', hipfire: '腰射', ads: '機瞄' });
   const TARGET_ROLES = Object.freeze({ 'single-target': '單一目標', 'multi-target-cleave': '多目標劈砍' });
   const ATTACK_BRANCHES = Object.freeze({ normal: '一般分支', abort: '中止分支', 'special-active': '特殊動作啟動分支',
     inner: '內側分支', outer: '外側分支' });
   const ATTACK_INPUTS = Object.freeze({ light: '輕攻擊', heavy: '重攻擊', special: '特殊動作',
-    dodge: '閃避', block: '格擋', push: '推擊' });
+    dodge: '閃避', block: '格擋', push: '推擊', shoot_pressed: '射擊輸入', zoom_shoot: '機瞄射擊輸入', weapon_special: '特殊動作輸入' });
 
   function nodeText(element) {
     let output = '';
@@ -412,17 +412,66 @@
     if (property.includes('chainaxe_sawing_stat')) return '鏈鋸階段攻擊威力';
     if (property.includes('power_distribution.attack')) return '攻擊威力';
     const normalized = property.replace(/\[[^\]]*\]/g, '').split('.').filter(Boolean).pop();
+    if (normalized === 'ammunition_clips') return '彈匣容量';
+    if (normalized === 'ammunition_reserve') return '備用彈藥容量';
     return WEAPON_PROPERTY_LABELS[normalized] || '來源數值';
   }
 
-  function sourceConditionText(rows) {
+  function decodeRawSourceValue(rawValue) {
+    if (typeof rawValue !== 'string') return rawValue;
+    if (rawValue.startsWith('"')) {
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (typeof parsed === 'string') return parsed;
+      } catch { /* Keep non-JSON source text literal. */ }
+    }
+    if (rawValue === 'true') return true;
+    if (rawValue === 'false') return false;
+    return rawValue;
+  }
+
+  function rangedSourceRow(row) {
+    const fieldPath = row?.sourceLocator?.fieldPath;
+    if (typeof fieldPath !== 'string') return null;
+    const value = decodeRawSourceValue(row.rawValue);
+    const numeric = typeof value === 'number' || (typeof value === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)$/u.test(value));
+    const numericText = numeric ? String(value) : null;
+    const enumLabels = Object.freeze({ hipfire: '腰射', ads: '機瞄', semi_auto: '半自動', flashlight: '手電筒',
+      shoot_hit_scan: '命中掃描射擊', immediate_single_shot: '單次即時射擊', shoot_pressed: '射擊輸入',
+      zoom_shoot: '機瞄射擊輸入', weapon_special: '特殊動作輸入' });
+    const displayed = fieldPath.match(/^weapon_template\.displayed_attacks\.(primary|secondary|special)\.(type|fire_mode)$/u);
+    if (displayed) {
+      const label = displayed[2] === 'fire_mode' ? '射擊模式'
+        : displayed[1] === 'special' ? '特殊動作' : '射擊姿勢';
+      return { fieldPath, label, value: enumLabels[value] ?? '來源值未有確認顯示名' };
+    }
+    const action = fieldPath.match(/^weapon_template\.actions\.(action_shoot_hip|action_shoot_zoomed|action_toggle_flashlight)\.(.+)$/u);
+    if (action) {
+      const property = action[2].split('.').at(-1);
+      if (property === 'kind') return { fieldPath, label: '動作種類', value: enumLabels[value] ?? '來源值未有確認顯示名' };
+      if (property === 'start_input') return { fieldPath, label: '動作輸入', value: enumLabels[value] ?? '來源輸入未有確認顯示名' };
+      if (property === 'ammunition_usage' && numericText !== null) return { fieldPath, label: '每次射擊消耗', value: numericText + ' ' + WEAPON_UNITS['instance-count'] };
+      if (property === 'allow_shots_with_less_than_required_ammo' && typeof value === 'boolean') {
+        return { fieldPath, label: '彈藥不足此動作需求時仍允許射擊', value: value ? '是' : '否' };
+      }
+      if (property === 'total_time' && numericText !== null) return { fieldPath, label: '動作總時長', value: numericText + ' 秒' };
+      if (property === 'chain_time' && numericText !== null) return { fieldPath, label: '動作銜接時間', value: numericText + ' 秒' };
+      if (property === 'activation_time' && numericText !== null) return { fieldPath, label: '特殊動作啟用時間', value: numericText + ' 秒' };
+    }
+    if (/^hitscan_templates\.[A-Za-z0-9_]+\.range$/u.test(fieldPath) && numericText !== null) {
+      return { fieldPath, label: '命中掃描範圍', value: numericText + '（來源未提供單位）' };
+    }
+    return null;
+  }
+
+  function sourceConditionText(rows, ranged) {
     if (!Array.isArray(rows) || rows.length === 0) return '未記載額外來源條件';
     return rows.map((row) => {
       const field = typeof row?.fieldPath === 'string' ? row.fieldPath.split('.').pop() : '';
       const value = typeof row?.rawValue === 'string' && /^[+-]?(?:\d+\.?\d*|\.\d+)$/u.test(row.rawValue)
         ? row.rawValue : null;
-      if (value !== null && field === 'chain_time') return '連段時間 ' + value + ' 秒';
-      if (value !== null && field === 'chain_until') return '連段窗口 ' + value + ' 秒';
+      if (value !== null && field === 'chain_time') return (ranged ? '動作銜接時間 ' : '連段時間 ') + value + ' 秒';
+      if (value !== null && field === 'chain_until') return (ranged ? '動作銜接窗口 ' : '連段窗口 ') + value + ' 秒';
       if (value !== null) return '其他來源條件值 ' + value;
       return '另有來源條件（原始值不作程式解讀）';
     }).join('；');
@@ -443,6 +492,7 @@
     panel.append(heading, status, tabs, view);
 
     function renderMark(mark) {
+      const hasRangedProfile = (mark.attackProfiles || []).some(profile => ['hipfire', 'ads'].includes(profile.payload?.mode));
       view.replaceChildren();
       const title = document.createElement('h3');
       title.textContent = mark.name;
@@ -537,7 +587,8 @@
       const details = document.createElement('details');
       details.className = 'w11-extension-weapon-source';
       const detailsSummary = document.createElement('summary');
-      detailsSummary.textContent = '其他來源數值、素質語意與連段條件';
+      detailsSummary.textContent = hasRangedProfile
+        ? '其他來源數值、素質語意與射擊條件' : '其他來源數值、素質語意與連段條件';
       details.append(detailsSummary);
       for (const table of mark.source?.statTables || []) {
         const section = document.createElement('section');
@@ -547,15 +598,54 @@
         section.append(title);
         const list = document.createElement('ul');
         for (const property of table.properties || []) {
-          const values = (property.orderedValues || []).map((row) => typeof row.decimal === 'string' ? row.decimal : null).filter(Boolean);
+          const orderedValues = property.orderedValues || [];
+          const values = orderedValues.map((row) => {
+            const value = typeof row.decimal === 'string' ? row.decimal : typeof row.rawValue === 'string' ? row.rawValue : null;
+            if (value === null) return null;
+            const endpoint = row.key === 'lerp_basic' ? '基礎模板端點'
+              : row.key === 'lerp_perfect' ? '完美模板端點' : row.key;
+            return endpoint + ' ' + value;
+          }).filter(Boolean);
           if (!values.length) continue;
           const item = document.createElement('li');
-          item.append(document.createTextNode(sourcePropertyLabel(property.property) + '：'
-            + values.join('、') + sourceUnit(property.unit) + ' '));
+          const hasTemplateEndpoints = orderedValues.some(row => row.key === 'lerp_basic' || row.key === 'lerp_perfect');
+          const valueLabel = hasTemplateEndpoints ? '來源模板端點（不代表實際可取得範圍）' : '來源值';
+          item.append(document.createTextNode(sourcePropertyLabel(property.property) + valueLabel + '：'
+            + values.join('；') + sourceUnit(property.unit) + ' '));
           appendCode(item, '來源欄位', property.property);
           list.append(item);
         }
         if (list.children.length) section.append(list);
+        details.append(section);
+      }
+      for (const item of mark.source?.statDefinitions || []) {
+        const definition = item?.definition;
+        const payload = definition?.payload || {};
+        if (!definition) continue;
+        const section = document.createElement('section');
+        const title = document.createElement('h4');
+        title.textContent = payload.quantity === 'ammunition_clips' ? '彈匣來源定義與曲線'
+          : payload.quantity === 'ammunition_reserve' ? '備用彈藥來源定義與曲線' : '來源數值定義與曲線';
+        appendCode(title, '來源定義', definition.recordId);
+        section.append(title);
+        if (payload.theoreticalInputRange) {
+          const theoretical = document.createElement('p');
+          theoretical.textContent = '理論來源輸入範圍：' + sourceRange(payload.theoreticalInputRange, 'theoretical');
+          section.append(theoretical);
+        }
+        if (payload.obtainableInputRange) {
+          const obtainable = document.createElement('p');
+          obtainable.textContent = '實際可取得範圍：' + sourceRange(payload.obtainableInputRange, 'obtainable')
+            + (['ammunition_clips', 'ammunition_reserve'].includes(payload.quantity)
+              ? '；來源模板端點不等同實際可取得彈藥數量。' : '');
+          section.append(obtainable);
+        }
+        for (const knot of item.curve?.payload?.knots || []) {
+          const endpoint = document.createElement('p');
+          endpoint.textContent = '來源曲線節點：輸入 ' + knot.input + sourceUnit(item.curve.payload.inputUnit)
+            + '，輸出 ' + knot.output + sourceUnit(item.curve.payload.outputUnit) + '。';
+          section.append(endpoint);
+        }
         details.append(section);
       }
       for (const row of mark.source?.statTableSemantics || []) {
@@ -591,10 +681,43 @@
         }
         section.append(list); details.append(section);
       }
+      const rangedRows = (mark.source?.sourceRows || []).map(rangedSourceRow).filter(Boolean);
+      if (rangedRows.length) {
+        const section = document.createElement('section');
+        const title = document.createElement('h4');
+        title.textContent = '射擊、彈藥與動作來源欄位';
+        section.append(title);
+        const list = document.createElement('ul');
+        for (const row of rangedRows) {
+          const item = document.createElement('li');
+          item.append(document.createTextNode(row.label + '：' + row.value + ' '));
+          appendCode(item, '來源欄位', row.fieldPath);
+          list.append(item);
+        }
+        section.append(list);
+        details.append(section);
+      }
+      const missingRows = mark.source?.dataCoverage?.missing || [];
+      if (missingRows.length) {
+        const section = document.createElement('section');
+        const title = document.createElement('h4');
+        title.textContent = '來源涵蓋與未匯入欄位';
+        section.append(title);
+        const list = document.createElement('ul');
+        for (const row of missingRows) {
+          const item = document.createElement('li');
+          item.append(document.createTextNode(row.reasonCode === 'NOT_IMPORTED' ? '尚未匯入' : '來源欄位未完整提供'));
+          appendCode(item, '來源狀態', row.reasonCode);
+          appendCode(item, '來源欄位', row.field);
+          list.append(item);
+        }
+        section.append(list);
+        details.append(section);
+      }
       const continuations = mark.source?.actionContinuations || [];
       if (continuations.length) {
         const section = document.createElement('section');
-        const title = document.createElement('h4'); title.textContent = '來源連段與條件'; section.append(title);
+        const title = document.createElement('h4'); title.textContent = '來源動作銜接與條件'; section.append(title);
         const list = document.createElement('ul');
         for (const row of continuations) {
           const item = document.createElement('li');
@@ -605,7 +728,7 @@
           }
           const inputLabel = ATTACK_INPUTS[row.inputKey] || '來源輸入';
           item.append(document.createTextNode(inputLabel + ' ')); appendCode(item, '', row.inputKey);
-          item.append(document.createTextNode('；' + sourceConditionText(row.conditions)));
+          item.append(document.createTextNode('；' + sourceConditionText(row.conditions, hasRangedProfile)));
           list.append(item);
         }
         section.append(list); details.append(section);
@@ -624,7 +747,7 @@
           item.append(document.createTextNode(' → ')); appendCode(item, '', entry.toAction);
           item.append(document.createTextNode('；' + (ATTACK_INPUTS[entry.inputKey] || '來源輸入') + ' '));
           appendCode(item, '', entry.inputKey);
-          item.append(document.createTextNode('；' + sourceConditionText(entry.conditions)));
+          item.append(document.createTextNode('；' + sourceConditionText(entry.conditions, hasRangedProfile)));
           section.append(item);
         }
         for (const branch of resolution.branchBindings || []) {
@@ -637,7 +760,7 @@
         }
         for (const condition of resolution.runtimeConditions || []) {
           const item = document.createElement('p');
-          item.textContent = '來源條件（未執行判定）：' + sourceConditionText([condition]);
+          item.textContent = '來源條件（未執行判定）：' + sourceConditionText([condition], hasRangedProfile);
           section.append(item);
         }
         details.append(section);
