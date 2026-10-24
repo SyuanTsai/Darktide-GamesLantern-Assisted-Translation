@@ -415,6 +415,19 @@ function createSharedViewModel({ domains, gameReleaseId } = {}) {
     }
     const attackProfiles = resolveRecords(view.attackProfileRefs, 'attack-profile', gameReleaseId, recordByKey);
     if (!attackProfiles) return unavailable('incomplete-weapon-attack-bundle', 'weapon');
+    if (!Array.isArray(weapon.payload.statRefs) || weapon.payload.statRefs.length === 0) {
+      return unavailable('incomplete-weapon-stat-definition-bundle', 'weapon');
+    }
+    const weaponStatDefinitions = resolveRecords(weapon.payload.statRefs, 'stat-definition', gameReleaseId, recordByKey);
+    if (!weaponStatDefinitions) return unavailable('incomplete-weapon-stat-definition-bundle', 'weapon');
+    const sourceStatDefinitions = [];
+    for (const definition of weaponStatDefinitions) {
+      const curveRef = definition.payload?.curveRef;
+      if (!curveRef) return unavailable('incomplete-weapon-stat-curve-bundle', 'weapon');
+      const curves = resolveRecords([{ ...curveRef, kind: 'stat-curve' }], 'stat-curve', gameReleaseId, recordByKey);
+      if (!curves) return unavailable('incomplete-weapon-stat-curve-bundle', 'weapon');
+      sourceStatDefinitions.push({ definition, curve: curves[0] ?? null });
+    }
     const termViews = new Map();
     addTerms(termViews, weapon.payload.termRefs, recordByKey, termLocalizations, gameReleaseId);
     const sectionResult = orderedSections(presentation.detailSections ?? [], {
@@ -438,10 +451,12 @@ function createSharedViewModel({ domains, gameReleaseId } = {}) {
       statSections,
       attackProfiles,
       source: {
+        dataCoverage: weapon.dataCoverage,
         displayedAttacks: weapon.payload.displayedAttacks,
         actionContinuations: weapon.payload.actionContinuations,
         statBindings: weapon.payload.statBindings,
         statTables: weapon.payload.statTables,
+        statDefinitions: sourceStatDefinitions,
         statTableSemantics: weapon.payload.statTableSemantics,
         sourceRows: weapon.payload.sourceRows,
       },

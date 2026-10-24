@@ -288,6 +288,8 @@ test('UnitT50_WeaponViewKeepsTypedTermsAndCanonicalOfficialErrata', () => {
   // Given one valid and one stale canonical segment anchor, When a weapon family view is built, Then all valid terms and only the exact erratum remain.
   const release = 'fixture:w11-weapon-view';
   const weaponRef = { gameReleaseId: release, kind: 'weapon', recordId: 'fixture:chainaxe:iv' };
+  const statDefinitionRef = { gameReleaseId: release, kind: 'stat-definition', recordId: 'fixture:chainaxe:iv-stamina' };
+  const statCurveRef = { gameReleaseId: release, kind: 'stat-curve', recordId: 'fixture:chainaxe:iv-stamina-curve' };
   const recordTerm = { gameReleaseId: release, kind: 'term', recordId: 'fixture:weapon-record-term' };
   const sectionTerm = { gameReleaseId: release, kind: 'term', recordId: 'fixture:weapon-section-term' };
   const digest = 'a'.repeat(64);
@@ -333,9 +335,15 @@ test('UnitT50_WeaponViewKeepsTypedTermsAndCanonicalOfficialErrata', () => {
       statSections: [{ label: '素質', claimRefs: [], curveRefs: [], statDefinitionRefs: [] }], attackProfileRefs: [] }
   };
   const weapons = emptyDomain('weapons');
-  weapons.source.records.push({ ...weaponRef, payload: { familyId: 'chainaxe-p1', markId: 'mark-iv',
-    termRefs: [recordTerm], displayedAttacks: [], actionContinuations: [], statBindings: [], statTables: [],
-    statTableSemantics: [], sourceRows: [] } });
+  weapons.source.records.push(
+    { ...weaponRef, payload: { familyId: 'chainaxe-p1', markId: 'mark-iv', statRefs: [statDefinitionRef],
+      termRefs: [recordTerm], displayedAttacks: [], actionContinuations: [], statBindings: [], statTables: [],
+      statTableSemantics: [], sourceRows: [] } },
+    { ...statDefinitionRef, payload: { quantity: 'stamina', curveRef: statCurveRef } },
+    { ...statCurveRef, payload: { inputUnit: 'ratio', outputUnit: 'ratio', knots: [
+      { input: '0', output: '1', sourceOrdinal: 1 }, { input: '1', output: '2', sourceOrdinal: 2 },
+    ] } },
+  );
   weapons.web.presentations.push(presentation);
   weapons.web.officialInputs.sources.push(nameEnglish, nameChinese, officialDescription);
 
@@ -353,4 +361,6 @@ test('UnitT50_WeaponViewKeepsTypedTermsAndCanonicalOfficialErrata', () => {
   assert.deepEqual(mark.errata.map((row) => ({ text: row.text, context: row.context.description })), [
     { text: '有效武器勘誤。', context: '有效範圍' }
   ]);
+  assert.equal(mark.source.statDefinitions.length, 1);
+  assert.deepEqual(mark.source.statDefinitions[0].curve.payload.knots.map(row => row.output), ['1', '2']);
 });
