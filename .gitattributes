@@ -6,3 +6,7 @@ extension/shared/** text eol=lf
 scripts/shared/** text eol=lf
 tests/w10/** text eol=lf
 docs/W10_*.md text eol=lf
+/extension/release-baseline/w15/** -text !eol
+/extension/icons/*.svg text eol=lf
+/extension/icons/*.png -text !eol
+/PRIVACY.md text eol=lf
