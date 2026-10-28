@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Abstract green and gold star">
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="#173d32"/>
+  <path d="M64 18 75 49 106 64 75 79 64 110 53 79 22 64 53 49Z" fill="#d8b45a"/>
+  <circle cx="64" cy="64" r="10" fill="#f6f1df"/>
+</svg>

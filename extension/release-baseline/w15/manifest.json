@@ -1,0 +1,70 @@
+{
+  "changeIndexPath": null,
+  "compatibility": {
+    "dataContractMajor": 2,
+    "gameSnapshotRefs": [
+      "chainaxe-w07-static-1.13.2-ba6c148",
+      "chainaxe-weapons-1.13.2-37-files",
+      "lasgun-p1-m1-w13-1.13.2-16-files",
+      "psyker-cited-code-1.13.1-15-files",
+      "psyker-skills-blessings-1.13.2-18-files"
+    ],
+    "requiredFeatures": [
+      "official-errata-details-v1",
+      "official-native-localizations-v1",
+      "blessing-tier-presentations-v1"
+    ]
+  },
+  "contentVersion": "1.13.2.3",
+  "dataRevision": "f182e7b4ba6fb04c9713ebada2cdbc8aabdd31d5b52b30a754e188ecc3fb5b2f",
+  "files": [
+    {
+      "dependencies": [],
+      "kind": "announcements",
+      "path": "domains/announcements.json",
+      "sha256": "d3328f5b80cbf233a0197015fd0daaf55e2b9987e0a252cc5405008f51350fc2",
+      "sizeBytes": 804556
+    },
+    {
+      "dependencies": [],
+      "kind": "blessings",
+      "path": "domains/blessings.json",
+      "sha256": "3e72d21be03b7beb966558665b7a4eb3fb389ea23fab8cf7c1cf722a409b22b5",
+      "sizeBytes": 113990
+    },
+    {
+      "dependencies": [],
+      "kind": "skills",
+      "path": "domains/skills.json",
+      "sha256": "108628d9c9262541bd95741fcc0ef52b08ff874d02ce11eb0684bb52ef6da449",
+      "sizeBytes": 165051
+    },
+    {
+      "dependencies": [],
+      "kind": "terms",
+      "path": "domains/terms.json",
+      "sha256": "602cb6aca68e6add34aaa8eb0552efbba66324a97e7c4fbc406f03c0932b78f6",
+      "sizeBytes": 124557
+    },
+    {
+      "dependencies": [],
+      "kind": "weapons",
+      "path": "domains/weapons.json",
+      "sha256": "132ec16e830d4af560bd212095f4fa0209bc8f238eb17a26528e112e6ebd41a8",
+      "sizeBytes": 6798596
+    }
+  ],
+  "gameReleaseId": "darktide:1.13.2",
+  "gameVersion": "1.13.2",
+  "schemaVersion": "2.0.0",
+  "source": {
+    "commit": "1867a8f5207fa7be60cd8c4bac4e2248740ca472",
+    "manifestSha256": "5dc042f69c3f9ed796dd9e5636556d6ee3176d3618021b00abd4e162aa0c3839",
+    "repository": "https://github.com/SyuanTsai/DarkTide-Source-Data",
+    "sourceRevision": "83e70e7946bd13738ea97ec6731daeb4df5eb42edec8e1e819f428ee2197005d"
+  },
+  "web": {
+    "authoringCommit": "968dd45c9e1a1ea08e57cf05d96b9c3ef00dc437",
+    "compilerCommit": "b26faa033d3b6bdc2549987be1d92f8cf493621c"
+  }
+}

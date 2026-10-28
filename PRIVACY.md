@@ -1,73 +1,61 @@
 # Darktide GamesLantern 繁中助手｜隱私政策
 
-生效日期：2026 年 10 月 11 日 · 適用版本：0.2.28
+生效日期：2026 年 10 月 28 日
 
-本外掛在 https://darktide.gameslantern.com/ 的原有頁面顯示繁體中文遊戲資料與攻略補充。這是獨立社群工具，與 GamesLantern、Fatshark 或 Games Workshop 無官方關係。
+這個獨立社群外掛只在 `darktide.gameslantern.com` 的指定技能、祝福、武器與 build-editor 路徑提供可切回原文的繁體中文顯示。它與 GamesLantern、Fatshark 及 Games Workshop 無官方關係，也不表示已獲官方背書。
 
-## PoC 驗證與授權狀態
+## 頁面資料如何處理
 
-本工具目前僅供 PoC（概念驗證）使用，相關素材的使用授權正洽詢中。這是獨立社群工具，與 GamesLantern、Fatshark 或 Games Workshop 無官方關係，亦不代表已取得官方背書。
+在支援的頁面中，外掛會於瀏覽器本機讀取目前頁面路徑，以及比對原生遊戲項目所需的可見名稱、描述、連結、選取的 patch 標籤和武器圖示資訊。這些內容用於核對本機資料中的精確對應項目；找不到唯一且已驗證的對應時，外掛保留原文。表單、可編輯欄位、build/guide prose 和任意使用者輸入不作為翻譯來源。
 
-## 本機處理與儲存的資料
-
-- **顯示偏好**：以 Chrome 本機儲存保存啟用狀態及顯示語言。這兩項設定不傳送給開發者，也不使用 Chrome 同步儲存。
-- **當前頁面的遊戲資料**：在記憶體中辨識指定網站的當前路徑、遊戲項目文字及圖示網址，對照外掛內的翻譯資料後原位顯示。頁面內容不送往開發者或分析服務，也不持久儲存。
-- **自由撰寫內容**：作者的攻略正文及輸入區不列為翻譯對象。外掛不儲存或上傳這些內容。
+頁面路徑與原生頁面內容只在瀏覽器的外掛元件間傳遞及短暫處理，不放入外部網路請求，也不由外掛傳送給開發者、GamesLantern 或分析服務。停用或切回原文會依頁面控制器還原原生文字。
 
 ## 網路連線
 
-為確認當前網站資料，本外掛在需要核對的頁面，每個頁面文件最多以 HTTPS GET 讀取一次 GamesLantern 的公開遊戲資料 API：
+外掛只從固定 HTTPS 資料站 `https://darktide.tw-syuan.com` 讀取公開 JSON：`/version.json`、版本指向的 manifest，以及 manifest 指定的四個核心資料域。依快取、驗證狀態或使用者觸發的更新檢查，可能重新請求這些檔案。請求使用 GET、沒有 request body、略過登入憑證（`credentials: omit`）並拒絕重新導向。外掛會核對來源、回應格式、檔案大小及固定雜湊；回應只作資料使用，不作程式碼執行。
 
-https://darktide.gameslantern.com/api/build-editor/initialize
+GamesLantern 頁面本身仍由瀏覽器直接載入，並可能依該網站自己的設計請求圖片或其他資源；這些網站連線不由外掛資料載入器管理。資料站會收到一般 HTTP 連線中繼資料，例如 IP 位址、時間、瀏覽器請求標頭與所請求的公開 URL。GamesLantern 也可能依使用者直接瀏覽網站的方式收到該網站自己的連線資訊。各站的伺服器記錄與保存方式依各站政策處理。
 
-此請求不附登入 Cookie（`credentials:omit`），沒有請求本文，也不把頁面文字、配裝或顯示偏好放入請求。API 回傳的 JSON 僅用來核對資料，不當作可執行程式碼。所有外掛程式碼均隨安裝封裝提供。
+## 本機儲存與保留
 
-GamesLantern 伺服器仍可能收到一般 HTTP 連線資訊，例如 IP 位址、瀏覽器資訊及請求標頭。其伺服器紀錄、網站原有功能、圖片及廣告由該網站管理，不由本外掛控制。開發者沒有營運收取外掛使用者資料的伺服器。
+外掛封裝內含一份已固定雜湊的 W15 公開資料基線，作為本機驗證及離線回復來源。下載並驗證的公開資料快照可存於瀏覽器 IndexedDB，供目前版本、前一個已驗證版本與更新檢查使用；外掛不使用 Chrome Sync、Chrome local storage 或網站帳號來保存這些資料。頁面文字與使用者輸入不寫入 IndexedDB。啟用／停用意圖只在目前文件的記憶體中維持，不建立跨頁個人偏好檔。
 
-## 資料用途與分享
+瀏覽器會管理擴充功能 IndexedDB 的可用空間及生命週期。使用者可在頁面控制列切回原文或停用，也可在 Chrome 擴充功能管理頁停用或移除外掛。移除後的本機資料清理由瀏覽器管理。
 
-上述資料只用於繁中顯示、原文切換與保存顯示偏好。本外掛沒有使用者行為統計、廣告追蹤或分析 SDK；不販售資料、不建立廣告或信用評估檔案，也不將頁面內容或設定分享給無關第三方。
+## 分享、追蹤與聯絡
 
-本外掛依 Chrome Web Store 使用者資料政策及 Limited Use 要求，將資料用途限制於上述使用者功能。
+外掛沒有廣告、行為分析 SDK、使用者帳號、表單提交或頁面內容上傳功能，也不販售或分享外掛取得的頁面內容。這項說明不涵蓋使用者直接瀏覽 GamesLantern 時該網站自己的資料處理。
 
-## 保存期限與使用者控制
-
-當前頁面的處理資料只存在該頁面的記憶體中；關閉或重新載入頁面後會重新建立。啟用與語言設定保存於瀏覽器本機，直到使用者變更設定或移除本外掛。可在頁面的控制列切回原文或停用翻譯，也可在 Chrome 擴充功能管理頁移除外掛及其本機設定。
-
-## 聯絡與政策更新
-
-如有隱私或資料處理問題，請使用本外掛 Chrome Web Store 項目所列的開發者聯絡方式。新版本若改變資料處理行為，會更新本頁的日期、適用版本及說明。
+隱私問題可透過外掛正式發佈頁提供的開發者聯絡方式提出。若未來版本改變資料處理方式，將更新本政策與生效日期。
 
 ---
 
 # Privacy Policy — English
 
-Effective October 11, 2026 · Extension version 0.2.28
+Effective date: October 28, 2026
 
-Darktide GamesLantern 繁中助手 displays Traditional Chinese game text and player-guide supplements on darktide.gameslantern.com. It is an independent community tool, unaffiliated with GamesLantern, Fatshark or Games Workshop.
+Darktide GamesLantern Traditional Chinese Assistant is an independent community extension. It provides reversible Traditional Chinese display on specified skill, blessing, weapon, and build-editor routes on `darktide.gameslantern.com`. It is not affiliated with or endorsed by GamesLantern, Fatshark, or Games Workshop.
 
-## PoC validation and permissions
+## Page data processed on your device
 
-This tool is currently provided solely for proof-of-concept (PoC) validation. Permission to use the relevant materials is being sought. It is an independent community tool, unaffiliated with GamesLantern, Fatshark or Games Workshop, and does not imply official endorsement.
+On supported pages, the extension reads the current page path and the visible native fields needed to identify a game item, such as its name, description, link, selected patch label, and weapon image metadata. It uses these values locally to find an exact match in the verified data. If there is no unique verified match, the original text remains. Forms, editable fields, build or guide prose, and arbitrary user input are not translation sources.
 
-## On-device data
-
-Chrome local storage retains only the enabled state and display language. Chrome sync storage is not used. The extension temporarily processes the current page path, native game-item text and icon URLs in memory to match its bundled translations. These values are not uploaded to the developer or an analytics service and are not persistently saved. Author-written guides and input areas are excluded from translation; their content is not saved or uploaded.
+The page path and native page values are handled in the browser by the extension's components. They are not included in external network requests or sent by the extension to the developer, GamesLantern, or an analytics service. Disabling the extension or switching back to the original text restores the native text through the page controls.
 
 ## Network requests
 
-On pages requiring dataset verification, the extension makes at most one HTTPS GET per document to https://darktide.gameslantern.com/api/build-editor/initialize. It omits login cookies using `credentials:omit`, sends no request body, and does not include page text, builds or preferences in the request. The returned JSON is used as data, never executed as code. All executable extension code is included in the installation package.
+The extension reads public JSON only from the fixed HTTPS data site `https://darktide.tw-syuan.com`: `/version.json`, the manifest selected by that version file, and the four core data domains declared by the manifest. Depending on cache and verification state or a user-triggered update check, it may request these files again. Requests use GET with no request body, omit login credentials (`credentials: omit`), and reject redirects. The extension verifies the origin, response format, file size, and fixed hashes; responses are treated as data, never executable code.
 
-The GamesLantern server may receive ordinary HTTP connection information such as the IP address, browser information and request headers. That website controls its own server logs, features, images and advertising. The extension publisher does not operate a server that receives extension users' data.
+The browser loads GamesLantern pages directly. That site may request images or other resources according to its own design; those requests are not made by the extension's data loader. The data site receives ordinary HTTP connection metadata such as an IP address, request time, browser headers, and the public URL requested. GamesLantern may receive its own connection information when a user visits its site directly. Each site controls its own server logs and retention under its policies.
 
-## Use and sharing
+## Local storage and retention
 
-Data is used only to provide translated text, original-text restoration and display preferences. The extension has no behavioral analytics, advertising tracker or analytics SDK. Data is not sold, used for advertising or credit profiling, or shared with unrelated third parties. Use is limited to the stated user-facing features under the Chrome Web Store User Data Policy and Limited Use requirements.
+The extension package includes a W15 public-data baseline with fixed hashes for local verification and offline recovery. Downloaded, verified public snapshots may be stored in browser IndexedDB for the active version, the previous verified version, and update checks. The extension does not use Chrome Sync, Chrome local storage, or a website account for these snapshots. Page text and user input are not written to IndexedDB. The enabled or disabled intent is kept in memory for the current document and is not saved as a cross-page preference profile.
 
-## Retention and controls
+The browser manages the storage quota and lifecycle for extension IndexedDB. Users can restore the original text or disable the extension using the page controls, or disable or remove it in Chrome's extension manager. The browser manages local-data cleanup after removal.
 
-Page-processing data remains in the document's memory and is recreated on navigation or reload. Local preferences remain until changed or the extension is removed. Users can restore the original language or disable translation using the page controls, or remove the extension and its local settings through Chrome's extension manager.
+## Sharing, tracking, and contact
 
-## Contact and updates
+The extension has no advertising, behavioral analytics SDK, user account, form submission, or page-content upload feature. It does not sell or share page content processed by the extension. This statement does not cover the site's own data practices when a user browses GamesLantern directly.
 
-For privacy questions, use the developer contact information on this extension's Chrome Web Store listing. If a new release changes data practices, this policy's effective date, version and description will be updated.
+Privacy questions may be sent through the developer contact method shown on the extension's official distribution page. If a future version changes these data practices, this policy and its effective date will be updated.
