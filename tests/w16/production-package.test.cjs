@@ -23,7 +23,7 @@ const EXPECTED_FILES = Object.freeze({
 const SHARED_FILES = Object.freeze([
   'contract.js', 'domains.js', 'loader.js', 'snapshot-store.js', 'update-coordinator.js',
   'document-session.js', 'baseline-provider.js', 'client.js', 'service-worker.js',
-  'native-identity.js', 'view-model.js', 'presentation.js', 'dom-adapter.js',
+  'native-identity.js', 'view-model.js', 'presentation.js', 'production-dataset.js', 'dom-adapter.js',
   'dom-controller.js', 'content-entry.js', 'display.css'
 ]);
 const CONTENT_MATCHES = Object.freeze([
@@ -108,8 +108,8 @@ test('UnitT10_ProductionPackagePinsW15BaselineAndUsesTheExactMV3Boundary', async
     assert.deepEqual(result.manifest.content_scripts[0].js, [
       'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
       'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
-      'shared/view-model.js', 'shared/presentation.js', 'shared/dom-adapter.js',
-      'shared/dom-controller.js', 'shared/content-entry.js'
+      'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
+      'shared/dom-controller.js', 'shared/production-dataset-pin.js', 'shared/content-entry.js'
     ]);
     assert.deepEqual(result.manifest.content_scripts[0].css, ['shared/display.css']);
     assert.deepEqual(result.manifest.icons, {
@@ -125,7 +125,8 @@ test('UnitT10_ProductionPackagePinsW15BaselineAndUsesTheExactMV3Boundary', async
       'PRIVACY.md', 'baseline/domains/blessings.json', 'baseline/domains/skills.json',
       'baseline/domains/terms.json', 'baseline/domains/weapons.json', 'baseline/manifest.json',
       'baseline/version.json', 'icons/icon128.png', 'icons/icon16.png', 'icons/icon32.png',
-      'icons/icon48.png', 'manifest.json', ...SHARED_FILES.map((file) => 'shared/' + file)
+      'icons/icon48.png', 'manifest.json', 'shared/production-dataset-pin.js',
+      ...SHARED_FILES.map((file) => 'shared/' + file)
     ].sort());
     assert.equal(packageFiles.some((file) => /test-support|harness|fixture|preview/i.test(file)), false);
     assert.equal(packageFiles.includes('baseline/domains/announcements.json'), false);
@@ -143,6 +144,17 @@ test('UnitT10_ProductionPackagePinsW15BaselineAndUsesTheExactMV3Boundary', async
     const baselineVersion = JSON.parse(fs.readFileSync(path.join(result.packageDirectory, 'baseline/version.json'), 'utf8'));
     assert.equal(baselineManifest.contentVersion, '1.13.2.3');
     assert.equal(baselineManifest.dataRevision, 'f182e7b4ba6fb04c9713ebada2cdbc8aabdd31d5b52b30a754e188ecc3fb5b2f');
+    const productionPinSource = fs.readFileSync(path.join(result.packageDirectory, 'shared/production-dataset-pin.js'), 'utf8');
+    const productionPinJson = productionPinSource.match(/Object\.freeze\((\{[\s\S]*\})\);/);
+    assert.ok(productionPinJson, 'release package must carry a generated production data-line pin');
+    assert.deepEqual(JSON.parse(productionPinJson[1]), {
+      schema: 'w16-production-dataset-pin/1',
+      gameVersion: baselineManifest.gameVersion,
+      gameReleaseId: baselineManifest.gameReleaseId,
+      contentVersion: baselineManifest.contentVersion,
+      dataRevision: baselineManifest.dataRevision,
+      manifestSha256: sha256(fs.readFileSync(path.join(result.packageDirectory, 'baseline/manifest.json')))
+    });
     assert.equal(baselineVersion.game_version, '1.13.2');
     assert.equal(baselineVersion.data_revision, baselineManifest.dataRevision);
     assert.equal(result.receipt.contentVersion, '1.13.2.3');
@@ -213,8 +225,8 @@ test('InterT10_ReleaseZipHasManifestAtRootAndExpandsToTheSameFileBytes', async (
 });
 
 test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { timeout: 120000 }, async () => {
-  // Scenario: Given the exact ZIP extracted into a fresh Chrome profile, when the MV3 worker and content script run offline.
-  // Purpose: Verify a real installed package can read and validate the pinned four-domain baseline without any test harness.
+  // Scenario: Given the exact ZIP extracted into a fresh Chrome profile and Root-observed native Brain Rupture markup, when the MV3 worker and content script run offline.
+  // Purpose: Verify a real production package maps only an exact W15 item without test proof support, while changed native text stays untouched.
   const tempRoot = makeTempRoot();
   const profileRoot = createPrivateProfileRoot();
   let context;
@@ -306,17 +318,121 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
       'domains/blessings.json', 'domains/skills.json', 'domains/terms.json', 'domains/weapons.json'
     ]);
 
-    await context.route('https://darktide.gameslantern.com/**', (route) => route.fulfill({
-      status: 200,
-      contentType: 'text/html; charset=utf-8',
-      body: '<!doctype html><html><body><main><p id="native-copy">Original native page text remains unchanged.</p></main></body></html>'
-    }));
+    const observedAbilityCard = '<a href="https://darktide.gameslantern.com/abilities/brain-rupture" title="Brain Rupture" class="flex items-center gap-2">'
+      + '<img src="https://gameslantern.com/storage/sites/darktide/exporter/talents/psyker/tactical/psyker_brain_burst_improved.png" width="60" height="60" loading="lazy">'
+      + '<div><div class="font-teko text-lg/5 lg:text-xl text-pretty text-[#D7E4CE] font-medium hover:underline">Brain Rupture</div>'
+      + '<div class="text-xs">Charge up your Psychic Power and release it to deal immense Damage to a Single Enemy.<br>\n<br>\n'
+      + 'This is an augmented version of <span style="color: rgb(226,199,126);">Brain Burst</span> dealing '
+      + '<span style="color: rgb(226,199,126);">+50%</span> Damage.</div></div></a>';
+    const driftedAbilityCard = observedAbilityCard.replace('dealing <span', 'dealing slightly more <span');
+    const detailAbility = '<div class="shadow-md border px-4 py-3 max-w-sm"><div class="flex text-sm"><div>Ability</div></div>'
+      + '<div class="text-lg">Brain Rupture</div><div class="font-normal leading-5">'
+      + 'Charge up your Psychic Power and release it to deal immense Damage to a Single Enemy.<br>\n<br>\n'
+      + 'This is an augmented version of <span style="color: rgb(226,199,126);">Brain Burst</span> dealing '
+      + '<span style="color: rgb(226,199,126);">+50%</span> Damage.</div></div>';
+    const weaponDetail = (route, title, imagePath) => '<main><div class="relative" id="header-region">'
+      + '<img alt="Header Image" src="https://darktide.gameslantern.com' + imagePath + '">'
+      + '<div class="card-bg text-neutral-200"><div class="lg:absolute inset-x-0 bottom-0 pb-8">'
+      + '<div class="relative flex justify-center pb-4 w-full"><h1><span>' + title + '</span><br><span>Warhammer 40,000</span></h1>'
+      + '<div class="outline-title">\n  <span>' + title + '</span>\n  <br>\n  <span>Warhammer 40,000</span>\n</div></div></div></div></div>'
+      + '<h2 class="text-xs">Stats</h2><div class="w-full grid"><div id="native-stats">native weapon stats</div></div>'
+      + '<h2 class="text-xs">Actions</h2><div class="w-full grid"><div id="native-actions">native weapon actions</div></div>'
+      + '<div id="native-damage-table">native interactive damage table</div></main>';
+    const pageBodies = new Map([
+      ['/abilities', '<main><section id="brain-rupture">' + observedAbilityCard
+        + '</section><section id="drifted-brain-rupture">' + driftedAbilityCard + '</section></main>'],
+      ['/abilities/brain-rupture', detailAbility],
+      ['/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe', weaponDetail(
+        '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
+        'Orestes Mk&nbsp;IV Assault Chainaxe',
+        '/storage/sites/darktide/weapons/VPoQRZKAlr4zEvg4uroy4gJ3z6IwTwyKS0MFKd4E.png')],
+      ['/weapons/infantry-lasgun/kantrael-mk-vii-infantry-lasgun', weaponDetail(
+        '/weapons/infantry-lasgun/kantrael-mk-vii-infantry-lasgun', 'Kantrael Mk VII Infantry Lasgun',
+        '/storage/sites/darktide/weapons/a01-unmapped-lasgun-fixture.png')]
+    ]);
+    await context.route('https://darktide.gameslantern.com/**', (route) => {
+      const url = new URL(route.request().url());
+      const body = pageBodies.get(url.pathname) || '<main></main>';
+      return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<!doctype html><html><body>' + body + '</body></html>' });
+    });
     const page = await context.newPage();
-    await page.goto('https://darktide.gameslantern.com/abilities/brain-rupture', { waitUntil: 'domcontentloaded' });
-    await page.locator('[data-w11-owned="controls"] [role="status"]').waitFor({ state: 'visible', timeout: 10000 });
-    assert.equal(await page.locator('#native-copy').textContent(), 'Original native page text remains unchanged.');
-    assert.equal(await page.locator('[data-w11-owned="details"]').count(), 0);
+    await page.goto('https://darktide.gameslantern.com/abilities', { waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => {
+      const status = document.querySelector('[data-w11-owned="controls"] [role="status"]');
+      return status && status.textContent !== '正在確認本機資料…';
+    }, null, { timeout: 10000 });
+    assert.equal(await page.locator('#brain-rupture .font-teko').textContent(), '顱腦崩裂',
+      'the exact observed native item should use its unique W15 presentation in the production package');
+    assert.equal(await page.locator('#brain-rupture [data-w11-owned="details"]').count(), 1);
+    assert.equal(await page.locator('#drifted-brain-rupture .font-teko').textContent(), 'Brain Rupture',
+      'a native description drift must stay in the original language');
+    assert.equal(await page.locator('#drifted-brain-rupture [data-w11-owned="details"]').count(), 0);
     assert.equal(await page.locator('[data-w11-owned="blessing-reader"]').count(), 0);
+
+    const detailPage = await context.newPage();
+    await detailPage.goto('https://darktide.gameslantern.com/abilities/brain-rupture', { waitUntil: 'domcontentloaded' });
+    await detailPage.waitForFunction(() => document.querySelector('[data-w11-owned="controls"] [role="status"]')?.textContent
+      !== '正在確認本機資料…', null, { timeout: 10000 });
+    assert.equal(await detailPage.locator('.shadow-md.border.max-w-sm .text-lg').textContent(), '顱腦崩裂',
+      'the supported ability detail card should use the exact W15 model');
+    assert.equal(await detailPage.locator('.shadow-md.border.max-w-sm [data-w11-owned="details"]').count(), 1);
+    // Scenario: Given the controls are active, when a later site overlay occupies the entire viewport with a higher z-index, use ordinary clicks at desktop and mobile widths.
+    // Purpose: Keep user-controlled restore and re-enable reachable without removing or altering site overlays, and ensure the controls do not trap focus.
+    await detailPage.evaluate(() => {
+      const overlay = document.createElement('div');
+      overlay.id = 'a01-high-z-site-overlay';
+      overlay.setAttribute('aria-label', 'controlled site overlay');
+      Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', zIndex: '2147483647', pointerEvents: 'auto',
+        background: 'rgb(0 0 0 / 2%)'
+      });
+      const outsideFocusTarget = document.createElement('button');
+      outsideFocusTarget.id = 'a01-outside-focus-target';
+      outsideFocusTarget.textContent = 'site focus target';
+      document.body.append(overlay, outsideFocusTarget);
+    });
+    const controls = detailPage.locator('[data-w11-owned="controls"]');
+    const overlay = detailPage.locator('#a01-high-z-site-overlay');
+    assert.equal(await overlay.isVisible(), true, 'the controlled site overlay must remain visible');
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await detailPage.setViewportSize(viewport);
+      await controls.getByRole('button', { name: '切回原文' }).click({ timeout: 5000 });
+      await detailPage.waitForFunction(() => document.querySelector('.shadow-md.border.max-w-sm .text-lg')?.textContent === 'Brain Rupture'
+        && document.querySelectorAll('.shadow-md.border.max-w-sm [data-w11-owned="details"]').length === 0);
+      assert.equal(await overlay.isVisible(), true, 'ordinary restore clicks must leave the overlay untouched');
+      await controls.getByRole('button', { name: '啟用繁體' }).click({ timeout: 5000 });
+      await detailPage.waitForFunction(() => document.querySelector('.shadow-md.border.max-w-sm .text-lg')?.textContent === '顱腦崩裂'
+        && document.querySelectorAll('.shadow-md.border.max-w-sm [data-w11-owned="details"]').length === 1);
+      assert.equal(await overlay.isVisible(), true, 'ordinary enable clicks must leave the overlay untouched');
+      assert.equal(await detailPage.locator(':modal').count(), 0, 'translation controls must not open a modal dialog');
+      await detailPage.locator('#a01-outside-focus-target').focus();
+      assert.equal(await detailPage.locator('#a01-outside-focus-target').evaluate((element) => document.activeElement === element), true,
+        'focus must remain available outside the translation controls');
+    }
+
+    const weaponPage = await context.newPage();
+    await weaponPage.goto('https://darktide.gameslantern.com/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
+      { waitUntil: 'domcontentloaded' });
+    await weaponPage.waitForFunction(() => document.querySelector('[data-w11-owned="controls"] [role="status"]')?.textContent
+      !== '正在確認本機資料…', null, { timeout: 10000 });
+    assert.equal(await weaponPage.locator('#header-region h1 span').first().textContent(), 'Orestes Mk\u00a0IV 突擊鏈斧',
+      'the exact observed chainaxe mark should keep its brand and mark while translating the weapon family');
+    assert.equal(await weaponPage.locator('[data-w11-owned="weapon"]').count(), 1);
+    assert.equal(await weaponPage.locator('#native-stats').textContent(), 'native weapon stats');
+    assert.equal(await weaponPage.locator('#native-actions').textContent(), 'native weapon actions');
+    assert.equal(await weaponPage.locator('#native-damage-table').textContent(), 'native interactive damage table');
+    await weaponPage.locator('[data-w11-owned="controls"] button').filter({ hasText: '切回原文' }).click();
+    await weaponPage.waitForFunction(() => document.querySelector('#header-region h1 span')?.textContent === 'Orestes Mk\u00a0IV Assault Chainaxe'
+      && document.querySelectorAll('[data-w11-owned="weapon"]').length === 0);
+
+    const unknownWeaponPage = await context.newPage();
+    await unknownWeaponPage.goto('https://darktide.gameslantern.com/weapons/infantry-lasgun/kantrael-mk-vii-infantry-lasgun',
+      { waitUntil: 'domcontentloaded' });
+    await unknownWeaponPage.waitForFunction(() => document.querySelector('[data-w11-owned="controls"] [role="status"]')?.textContent
+      !== '正在確認本機資料…', null, { timeout: 10000 });
+    assert.equal(await unknownWeaponPage.locator('#header-region h1 span').first().textContent(), 'Kantrael Mk VII Infantry Lasgun',
+      'an unsupported native weapon tuple must remain in the original language');
+    assert.equal(await unknownWeaponPage.locator('[data-w11-owned="weapon"]').count(), 0);
   } finally {
     if (context) await context.close();
     removePrivateProfileRoot(profileRoot);

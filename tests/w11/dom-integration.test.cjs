@@ -144,7 +144,7 @@ function makeCardMarkup(model, id, tagName = 'div', href = 'https://darktide.gam
   const parameterIndex = parts[1].indexOf(parameter);
   const before = parts[1].slice(0, parameterIndex);
   const after = parts[1].slice(parameterIndex + parameter.length);
-  return `<${tagName} id="${esc(id)}"><a class="flex items-center gap-2" title="${esc(model.nativeName)}" href="${esc(href)}"><img alt=""><div><div class="font-teko">${esc(model.nativeName)}</div><div class="text-xs">${esc(parts[0])}<br><br>${esc(before)}<span class="native-parameter">${esc(parameter)}</span>${esc(after)}</div></div></a></${tagName}>`;
+  return `<${tagName} id="${esc(id)}"><a class="flex items-center gap-2" title="${esc(model.nativeName)}" href="${esc(href)}"><img alt=""><div><div class="font-teko">${esc(model.nativeName)}</div><div class="text-xs">${esc(parts[0])}<br>\n<br>\n${esc(before)}<span class="native-parameter">${esc(parameter)}</span>${esc(after)}</div></div></a></${tagName}>`;
 }
 
 function makeTooltipMarkup(model, id) {
@@ -607,6 +607,104 @@ test('InterT20_PatchChangeDuringDelayedInitializationNeverAppliesStaleView', asy
       reason: 'patch-selection-changed'
     });
     await page.evaluate(() => window.__w11Delayed.controller.dispose());
+  } finally {
+    if (context) await context.close();
+    if (serverListening) await new Promise((resolve) => server.close(resolve));
+    removePrivateProfileRoot(profileRoot);
+  }
+});
+
+test('InterT25_ChangedNativeHrefAndImageIdentityStayOriginalUntilRestored', async () => {
+  // Scenario: Given a uniquely verified ability card, when its supported href or image identity attributes change.
+  // Purpose: Restore the original card and keep it untranslated across observer rescans until the original native identity returns.
+  const { snapshot } = await readVerifiedCandidate();
+  const model = presentation.buildSkillViewModels(snapshot).find((row) => row.nativeName === 'Brain Rupture');
+  assert.ok(model);
+  const evidence = Buffer.from('W11 isolated attribute-identity proof; not a live Games Lantern identity', 'utf8');
+  const evidenceSha256 = sha256(evidence);
+  const runtime = loadRuntime();
+  const profileRoot = createPrivateProfileRoot();
+  const html = '<main id="app">' + makeCardMarkup(model, 'identity-card') + '</main>';
+  const server = http.createServer((_request, response) => {
+    response.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    response.end('<!doctype html><html><head><meta charset="utf-8"></head><body>' + html + '</body></html>');
+  });
+  let context;
+  let serverListening = false;
+  try {
+    await new Promise((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    serverListening = true;
+    context = await runtime.playwright.chromium.launchPersistentContext(profileRoot, {
+      executablePath: runtime.executablePath,
+      headless: true,
+      args: ['--disable-background-networking', '--no-first-run']
+    });
+    const page = await context.newPage();
+    await page.goto('http://127.0.0.1:' + server.address().port + '/');
+    for (const file of ['native-identity.js', 'view-model.js', 'presentation.js', 'dom-adapter.js', 'dom-controller.js']) {
+      await page.addScriptTag({ path: path.resolve(__dirname, '../../extension/shared', file) });
+    }
+    await page.evaluate((input) => {
+      const identity = input.snapshot.identity;
+      const snapshot = { identity, domains: new Map(input.rows) };
+      const resolver = W11NativeIdentity.createNativeIdentityResolver({ proofs: [
+        { evidenceId: 'isolated-attribute-identity', sha256: input.evidenceSha256, identity }
+      ] });
+      const client = { async initialize(requestedIdentity) {
+        return { status: 'ready', source: 'baseline', identity: requestedIdentity, snapshot };
+      } };
+      const controller = W11DomController.createDomController({
+        document, root: document, identityResolver: resolver,
+        getNativeSnapshotBytes: () => input.evidence, client
+      });
+      window.__attributeIdentityController = controller;
+    }, {
+      snapshot: { identity: snapshot.identity },
+      rows: [...snapshot.domains.entries()].filter(([kind]) => kind === 'skills' || kind === 'terms'),
+      evidence: [...evidence], evidenceSha256
+    });
+    await page.evaluate(() => window.__attributeIdentityController.start());
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === '顱腦崩裂');
+
+    await page.locator('#identity-card a').evaluate((anchor) => {
+      anchor.setAttribute('href', 'https://darktide.gameslantern.com/abilities/brain-rupture-another-slug');
+    });
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === 'Brain Rupture'
+      && document.querySelectorAll('#identity-card [data-w11-owned="details"]').length === 0);
+    const hrefRemainsOriginal = await page.evaluate(async () => {
+      for (let frame = 0; frame < 4; frame += 1) await new Promise(requestAnimationFrame);
+      return {
+        title: document.querySelector('#identity-card .font-teko').textContent,
+        details: document.querySelectorAll('#identity-card [data-w11-owned="details"]').length
+      };
+    });
+    assert.deepEqual(hrefRemainsOriginal, { title: 'Brain Rupture', details: 0 });
+
+    await page.locator('#identity-card a').evaluate((anchor) => {
+      anchor.setAttribute('href', 'https://darktide.gameslantern.com/abilities/brain-rupture');
+    });
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === '顱腦崩裂');
+
+    await page.locator('#identity-card img').evaluate((image) => image.setAttribute('alt', 'different native illustration'));
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === 'Brain Rupture'
+      && document.querySelectorAll('#identity-card [data-w11-owned="details"]').length === 0);
+    const altRemainsOriginal = await page.evaluate(async () => {
+      for (let frame = 0; frame < 4; frame += 1) await new Promise(requestAnimationFrame);
+      return {
+        title: document.querySelector('#identity-card .font-teko').textContent,
+        details: document.querySelectorAll('#identity-card [data-w11-owned="details"]').length
+      };
+    });
+    assert.deepEqual(altRemainsOriginal, { title: 'Brain Rupture', details: 0 });
+
+    await page.locator('#identity-card img').evaluate((image) => image.setAttribute('alt', ''));
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === '顱腦崩裂');
+    await page.evaluate(() => window.__attributeIdentityController.dispose());
+    await page.waitForFunction(() => document.querySelector('#identity-card .font-teko')?.textContent === 'Brain Rupture'
+      && document.querySelectorAll('#identity-card [data-w11-owned]').length === 0);
   } finally {
     if (context) await context.close();
     if (serverListening) await new Promise((resolve) => server.close(resolve));

@@ -36,11 +36,11 @@
   const ATTACK_INPUTS = Object.freeze({ light: '輕攻擊', heavy: '重攻擊', special: '特殊動作',
     dodge: '閃避', block: '格擋', push: '推擊', shoot_pressed: '射擊輸入', zoom_shoot: '機瞄射擊輸入', weapon_special: '特殊動作輸入' });
 
-  function nodeText(element) {
+  function nodeText(element, overrides = null) {
     let output = '';
     function visit(node) {
       for (const child of node.childNodes || []) {
-        if (child.nodeType === 3) output += child.nodeValue;
+        if (child.nodeType === 3) output += overrides && overrides.has(child) ? overrides.get(child) : child.nodeValue;
         else if (child.nodeType === 1 && child.tagName === 'BR') output += '\n';
         else visit(child);
       }
@@ -55,6 +55,25 @@
     const result = [];
     while (walker.nextNode()) result.push(walker.currentNode);
     return result;
+  }
+
+  function restoredText(element, record) {
+    const overrides = new Map((record && Array.isArray(record.changes) ? record.changes : [])
+      .map((change) => [change.node, change.originalValue]));
+    return textNodes(element).map((node) => overrides.has(node) ? overrides.get(node) : node.nodeValue).join('');
+  }
+
+  function recordOverrides(record) {
+    return new Map((record && Array.isArray(record.changes) ? record.changes : [])
+      .map((change) => [change.node, change.originalValue]));
+  }
+
+  function skillIdentityKey(anchor, document, detail) {
+    const images = anchor && anchor.querySelectorAll ? [...anchor.querySelectorAll('img')] : [];
+    const image = images.length === 1 ? images[0] : null;
+    return JSON.stringify([detail ? 'detail' : 'ability', document && document.location && document.location.pathname || '',
+      anchor && typeof anchor.href === 'string' ? anchor.href : '',
+      image ? image.currentSrc || image.src || '' : '', image ? image.alt || '' : '']);
   }
 
   function isEditableElement(element) {
@@ -92,6 +111,29 @@
     }
   }
 
+  function abilityDetailDocument(document) {
+    if (!document || !document.location || typeof document.location.href !== 'string') return false;
+    try {
+      const url = new URL(document.location.href);
+      return url.protocol === 'https:' && url.hostname === 'darktide.gameslantern.com'
+        && !url.port && !url.username && !url.password && !url.search && !url.hash
+        && /^\/abilities\/[a-z0-9-]+\/?$/i.test(url.pathname);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function observedParagraphBreaks(element) {
+    const breaks = [...element.querySelectorAll('br')];
+    if (breaks.length !== 2 || breaks[0].parentElement !== breaks[1].parentElement) return false;
+    let node = breaks[0].nextSibling;
+    while (node && node !== breaks[1]) {
+      if (node.nodeType !== 3 || !/^\s*$/.test(node.nodeValue || '')) return false;
+      node = node.nextSibling;
+    }
+    return node === breaks[1];
+  }
+
   function hasKnownAbilityShape(anchor) {
     if (!anchor || anchor.tagName !== 'A' || !anchor.classList.contains('flex')
       || !anchor.classList.contains('items-center') || !anchor.classList.contains('gap-2')
@@ -118,29 +160,56 @@
       || names[0].parentElement !== descriptions[0].parentElement
       || protectedElement(names[0]) || protectedElement(descriptions[0])
       || textNodes(names[0]).length !== 1 || names[0].childElementCount !== 0
-      || descriptions[0].querySelector('script, style, iframe, object, embed, template')) return null;
+      || descriptions[0].querySelector('script, style, iframe, object, embed, template')
+      || !observedParagraphBreaks(descriptions[0])) return null;
     return { nameElement: names[0], descriptionElement: descriptions[0], tooltip: true };
+  }
+
+  function hasKnownAbilityDetailShape(container) {
+    if (!container || protectedElement(container) || !container.matches('div.shadow-md.border.max-w-sm')) return null;
+    const names = container.querySelectorAll('div.text-lg');
+    const descriptions = container.querySelectorAll('div.font-normal.leading-5');
+    if (names.length !== 1 || descriptions.length !== 1 || names[0].nextElementSibling !== descriptions[0]
+      || names[0].parentElement !== descriptions[0].parentElement
+      || protectedElement(names[0]) || protectedElement(descriptions[0])
+      || textNodes(names[0]).length !== 1 || names[0].childElementCount !== 0
+      || descriptions[0].querySelector('a, button, input, textarea, select, script, style, iframe, object, embed, template')
+      || !observedParagraphBreaks(descriptions[0])) return null;
+    for (const element of descriptions[0].querySelectorAll('*')) {
+      if (!['SPAN', 'BR'].includes(element.tagName)) return null;
+    }
+    return { anchor: container, nameElement: names[0], descriptionElement: descriptions[0], detail: true };
   }
 
   function collectSkillSlots(root) {
     if (!root || typeof root.querySelectorAll !== 'function') return [];
+    const document = root.nodeType === 9 ? root : root.ownerDocument;
     const slots = [];
     for (const anchor of root.querySelectorAll('a.flex.items-center.gap-2')) {
       if (protectedElement(anchor) || !hasKnownAbilityShape(anchor)) continue;
       const nameElement = anchor.querySelector('.font-teko');
       const descriptionElement = anchor.querySelector('.text-xs');
       if (textNodes(nameElement).length !== 1 || nameElement.childElementCount !== 0) continue;
-      const breaks = [...descriptionElement.querySelectorAll('br')];
-      if (breaks.length !== 2 || breaks[0].nextSibling !== breaks[1]) continue;
+      if (!observedParagraphBreaks(descriptionElement)) continue;
       if (descriptionElement.querySelector('script, style, iframe, object, embed, template')) continue;
-      slots.push(Object.freeze({ anchor, nameElement, descriptionElement }));
+      slots.push(Object.freeze({ anchor, nameElement, descriptionElement,
+        identityKey: skillIdentityKey(anchor, document, false) }));
     }
     const tooltipSeen = new Set(slots.map((slot) => slot.nameElement));
     for (const tooltip of root.querySelectorAll('#gameslantern-tooltip, #darktide-build-editor div.fixed.max-w-sm.w-full.pointer-events-none')) {
       const shape = hasKnownAbilityTooltipShape(tooltip);
       if (!shape || tooltipSeen.has(shape.nameElement)) continue;
       tooltipSeen.add(shape.nameElement);
-      slots.push(Object.freeze({ anchor: tooltip, ...shape }));
+      slots.push(Object.freeze({ anchor: tooltip, ...shape,
+        identityKey: skillIdentityKey(tooltip, document, false) }));
+    }
+    if (abilityDetailDocument(document)) {
+      const containers = [...root.querySelectorAll('div.shadow-md.border.max-w-sm')];
+      if (containers.length === 1) {
+        const detail = hasKnownAbilityDetailShape(containers[0]);
+        if (detail) slots.push(Object.freeze({ ...detail,
+          identityKey: skillIdentityKey(detail.anchor, document, true) }));
+      }
     }
     return slots;
   }
@@ -201,7 +270,17 @@
         group.push(tokens[index]);
         continue;
       }
-      if (tokens[index + 1] === null) index += 1;
+      let secondBreak = index + 1;
+      const whitespace = [];
+      while (secondBreak < tokens.length && tokens[secondBreak] !== null
+        && tokens[secondBreak].nodeType === 3 && /^\s*$/.test(tokens[secondBreak].nodeValue || '')) {
+        whitespace.push(tokens[secondBreak]);
+        secondBreak += 1;
+      }
+      if (tokens[secondBreak] === null) {
+        group.push(...whitespace);
+        index = secondBreak;
+      }
       groups.push(group);
       group = [];
     }
@@ -845,7 +924,8 @@
       if (!image || !supportedWeaponImage(image.currentSrc || image.src, document)) continue;
       slots.push(Object.freeze({ anchor: heading, heading, container, mirror, mirrorTitleElement,
         titleSpan: elements[0], titleNode: textNodes(elements[0])[0], outlineTitleNode: outlineTitleNodes[0],
-        headerRegion: imageScope, image, document }));
+        headerRegion: imageScope, image, document,
+        identityKey: JSON.stringify([document.location.href, image.alt, image.currentSrc || image.src]) }));
     }
     return slots;
   }
@@ -874,21 +954,22 @@
   function createDomAdapter({ document = globalThis.document } = {}) {
     if (!document || typeof document.createElement !== 'function') throw new TypeError('a DOM document is required');
 
-    function observe(slot) {
+    function observe(slot, record = null) {
+      const overrides = recordOverrides(record);
       return Object.freeze({
-        structure: 'gameslantern-ability-card-v1',
-        name: slot.nameElement.textContent,
-        description: nodeText(slot.descriptionElement)
+        structure: slot.detail ? 'gameslantern-ability-detail-v1' : 'gameslantern-ability-card-v1',
+        name: restoredText(slot.nameElement, record),
+        description: nodeText(slot.descriptionElement, overrides)
       });
     }
 
-    function observeWeapon(slot) {
+    function observeWeapon(slot, record = null) {
       if (!slot || !slot.document || !slot.image) return null;
       return Object.freeze({
         structure: 'gameslantern-weapon-detail-v1',
         href: slot.document.location.href,
-        title: slot.titleSpan.textContent,
-        mirrorTitle: slot.mirrorTitleElement.textContent,
+        title: restoredText(slot.titleSpan, record),
+        mirrorTitle: restoredText(slot.mirrorTitleElement, record),
         imageAlt: slot.image.alt,
         imageSrc: slot.image.currentSrc || slot.image.src
       });
@@ -897,8 +978,8 @@
     function applySkill(slot, model) {
       if (!slot || !model || protectedElement(slot.anchor)
         || !presentationApi.matchesSkillObservation(model, observe(slot))) return null;
-      const existingDetails = slot.tooltip
-        ? slot.anchor.querySelector(':scope > [' + OWNED_ATTRIBUTE + '="details"]')
+      const existingDetails = slot.tooltip || slot.detail
+        ? slot.anchor.querySelector('[data-w11-owned="details"]')
         : slot.anchor.parentElement.querySelector(':scope > [' + OWNED_ATTRIBUTE + '="details"]');
       if (existingDetails) return null;
       const targetParagraphs = model.translatedDescription.split('\n\n');
@@ -923,10 +1004,10 @@
       if (details && slot.tooltip) details.classList.add('w11-extension-tooltip-panel');
       for (const change of changes) change.node.nodeValue = change.writtenValue;
       if (details) {
-        if (slot.tooltip) slot.descriptionElement.parentNode.insertBefore(details, slot.descriptionElement.nextSibling);
+        if (slot.tooltip || slot.detail) slot.descriptionElement.parentNode.insertBefore(details, slot.descriptionElement.nextSibling);
         else slot.anchor.parentNode.insertBefore(details, slot.anchor.nextSibling);
       }
-      return { anchor: slot.anchor, changes, details };
+      return { anchor: slot.anchor, changes, details, identityKey: slot.identityKey };
     }
 
     function applyWeapon(slot, family, mark, marks) {
@@ -949,7 +1030,7 @@
       ] : [];
       for (const change of changes) change.node.nodeValue = change.writtenValue;
       insertParent.insertBefore(panel, slot.headerRegion.nextSibling);
-      return { anchor: slot.heading, changes, ownedNodes: [panel] };
+      return { anchor: slot.heading, changes, ownedNodes: [panel], identityKey: slot.identityKey };
     }
 
     function restore(record) {

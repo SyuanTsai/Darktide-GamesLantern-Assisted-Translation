@@ -2,11 +2,17 @@
 
 ## Current status
 
-This repository has a Windows-only production packager and a pinned W15 baseline. The current Web Store item ID, published version, contact and listing selections have not been verified here; no upload or submission is recorded. A code-version `0.2.31` ZIP candidate is ready. Before submitting, select the existing item and check its current version. If it is below `0.2.31`, this candidate version is eligible; if it is `0.2.31` or higher, rebuild with the next valid version above the actual listing. Do not create a new Store item or invent its ID or contact details.
+This repository has a Windows-only production packager and a pinned W15 baseline. The current Web Store item ID, published version, contact and listing selections have not been verified here; no upload or submission is recorded. A code-version `0.2.32` ZIP candidate is ready. Before submitting, select the existing item and check its current version. If it is below `0.2.32`, this candidate version is eligible; if it is `0.2.32` or higher, rebuild with the next valid version above the actual listing. Do not create a new Store item or invent its ID or contact details.
 
-The complete W16 package suite passed 5/5 on the fixed W15 baseline, including fresh-profile MV3 installation from the ZIP, offline baseline verification, and unknown-identity original-text preservation. Root's exact-ZIP acceptance also verified the six fixed HTTPS JSON GETs (no body, credentials omitted, redirects rejected) and the active IndexedDB snapshot. A separate legacy W10 UnitT21 may skip when its old approved-candidate environment variable is absent; that unrelated skip does not change the W16 result. The packaged runtime still has the W10/W11 native-identity guard and no production proof registry. The suite verifies safe behavior for an unknown item, not a positive live GamesLantern translation; this package must not be described as a complete translated experience.
+The W16 production package suite passed 7/7 on the fixed W15 baseline, including a fresh-profile MV3 ZIP install, raw baseline verification, and offline reads. Its controlled-DOM integration verifies exact Brain Rupture list/detail and chainaxe matches, original-text restoration, a changed-description rejection, and an unmatched lasgun remaining original. The W11 DOM suite passed 9/9, including the existing unselected-candidate compatibility case and native `href`/image `alt` identity changes that remain untranslated until the original identity returns. These captured-DOM results are not live GamesLantern page results.
 
-The current candidate is `darktide-gameslantern-zh-tw-0.2.31.zip`, SHA-256 `e1b9f985b3c35d8c2ac176baf76fae1eaa3b9c6c751e0e50abbbdbb5666d3cda`; the adjacent `package-receipt.json` records the inventory and W15 identity. This ZIP and receipt are local build artifacts, not a Store upload or approval.
+The controls now use a non-modal manual popover when supported, with the existing fixed-position fallback. The focused production MV3 integration passed `1/1`: ordinary mouse clicks restored and re-enabled translation at `1280x900` and `390x844` while a full-viewport, maximum-z-index overlay remained visible; no modal or focus trap was introduced. W11 content-entry tests passed `6/6`. Root's deduplicated targeted verification (`34/34`) and the tightened infantry-lasgun negative (`1/1`) were run before this controls correction.
+
+After the controls correction, Root reran the full deduplicated targeted set: `34 passed / 0 failed / 0 skipped`. This includes the updated normal-package MV3 overlay and unknown-mark checks.
+
+The current clean-index candidate is `darktide-gameslantern-zh-tw-0.2.32.zip`, SHA-256 `cb79c83ca7c40a6fffdee4d272f0851632a862f74572053303e648bcb972d3ac`; its paired `package-receipt.json` records the inventory and W15 identity. The earlier `aa153146…` ZIP predates the controls correction and is not the upload candidate. This ZIP and receipt are local build artifacts, not a Store upload or approval.
+
+Root verified this exact final ZIP on the real GamesLantern `/abilities` page: Brain Rupture translated to `顱腦崩裂`, ordinary mouse clicks restored English and re-enabled translation, and the six fixed JSON GETs carried no Cookie or Authorization. No routing mock or test proof was injected. The final ZIP's live result is recorded in the local delivery evidence. Live detail and weapon routes returned HTTP 403 during the earlier run and were not retried; their positive behavior is covered only by controlled-DOM MV3 fixtures. Do not describe those routes as live-verified or claim the extension's dataset proves the whole GamesLantern site version.
 
 ## Rebuild the package
 
@@ -15,10 +21,10 @@ Run from a clean Windows checkout with the repository's existing Node runtime an
 ```powershell
 npm run icons:w16:render
 npm run test:w16:package
-npm run package:w16:release -- --version 0.2.31 --output-dir <new-absolute-output-directory>
+npm run package:w16:release -- --version 0.2.32 --output-dir <new-absolute-output-directory>
 ```
 
-The output directory must not already exist and should be outside the repository. If the existing Store version is at least `0.2.31`, use the next valid version above the actual listing. For example, if the Store currently reports exactly `0.2.31`, rebuild with `--version 0.2.32`; if it reports another value, increment that verified value instead. The builder accepts one to four canonical integer components, each no greater than 65535, rejects leading zeros and the all-zero version, and does not determine whether the chosen version is newer than the Store listing.
+The output directory must not already exist and should be outside the repository. If the existing Store version is at least `0.2.32`, use the next valid version above the actual listing. The builder accepts one to four canonical integer components, each no greater than 65535, rejects leading zeros and the all-zero version, and does not determine whether the chosen version is newer than the Store listing.
 
 Keep `package-receipt.json` with the ZIP outside the upload. Confirm its `extensionVersion`, W15 `contentVersion`, `buildId`, `dataRevision`, baseline pins, package file inventory and `archive.sha256`. The receipt is evidence for the local artifact; it does not mean Chrome reviewed, approved, or published it.
 
@@ -36,7 +42,7 @@ Before considering an artifact ready for review, verify:
 - “切回原文” and disable restore the original page content;
 - ZIP contents and receipt still match after extraction.
 
-A successful build or baseline check does not verify a positive live GamesLantern identity match. Keep that result separate until there is fixed native evidence for the exact page and source tuple. Do not add test proof or a locally asserted identity to the production package.
+A successful build or captured-DOM integration does not establish live behavior for every supported route. The live `/abilities` result is limited to the observed Brain Rupture item; detail and weapon live routes remain unverified after HTTP 403. Do not add test proof or a locally asserted identity to the production package.
 
 ## Chrome Web Store review checklist
 

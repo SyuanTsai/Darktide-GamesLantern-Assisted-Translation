@@ -12,7 +12,7 @@ const SHARED_FILES = Object.freeze([
   'contract.js', 'domains.js', 'loader.js', 'snapshot-store.js',
   'update-coordinator.js', 'document-session.js', 'baseline-provider.js',
   'client.js', 'service-worker.js', 'native-identity.js', 'view-model.js',
-  'presentation.js', 'dom-adapter.js', 'dom-controller.js', 'content-entry.js', 'display.css'
+  'presentation.js', 'production-dataset.js', 'dom-adapter.js', 'dom-controller.js', 'content-entry.js', 'display.css'
 ]);
 const GAME_CONTENT_MATCHES = Object.freeze([
   'https://darktide.gameslantern.com/build-editor*',
@@ -178,7 +178,7 @@ function buildDevExtension(options = {}) {
         js: [
           'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
           'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
-          'shared/view-model.js', 'shared/presentation.js', 'shared/dom-adapter.js',
+          'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
           'shared/dom-controller.js', ...(includeTestHarness ? ['test-support/native-proof-registry.js'] : []),
           'shared/content-entry.js'
         ],

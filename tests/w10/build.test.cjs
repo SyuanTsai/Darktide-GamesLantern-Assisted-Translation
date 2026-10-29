@@ -69,7 +69,7 @@ test('UnitT20_IsolatedBuildPinsPreviewAndIncludesOnlyOptInLocalHarness', () => {
         'shared/contract.js', 'shared/domains.js', 'shared/loader.js', 'shared/snapshot-store.js',
         'shared/update-coordinator.js', 'shared/document-session.js', 'shared/baseline-provider.js',
         'shared/client.js', 'shared/service-worker.js', 'shared/native-identity.js', 'shared/view-model.js',
-        'shared/presentation.js', 'shared/dom-adapter.js', 'shared/dom-controller.js', 'shared/content-entry.js',
+        'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js', 'shared/dom-controller.js', 'shared/content-entry.js',
         'shared/display.css'
       ]);
       if (result.includeTestHarness) {

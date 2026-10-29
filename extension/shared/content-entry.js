@@ -5,25 +5,27 @@
     commonJs ? require('./client.js') : root.W10SharedClient,
     commonJs ? require('./dom-controller.js') : root.W11DomController,
     commonJs ? require('./dom-adapter.js') : root.W11DomAdapter,
-    commonJs ? require('./presentation.js') : root.W11Presentation
+    commonJs ? require('./presentation.js') : root.W11Presentation,
+    commonJs ? require('./production-dataset.js') : root.W16ProductionDataset
   );
   if (commonJs) module.exports = api;
   root.W11ContentEntry = api;
   if (!commonJs && root.document && root.chrome && root.chrome.runtime) {
     try { root.__W11_CONTENT_ENTRY_INSTANCE__ = api.startPage(root); } catch (_) { /* Unknown pages stay native. */ }
   }
-})(typeof globalThis === 'object' ? globalThis : this, function (identityApi, clientApi, controllerApi, adapterApi, presentationApi) {
+})(typeof globalThis === 'object' ? globalThis : this, function (identityApi, clientApi, controllerApi,
+  adapterApi, presentationApi, productionDatasetApi) {
   'use strict';
 
   const GAME_ORIGIN = 'https://darktide.gameslantern.com';
   const OWNED_ATTRIBUTE = 'data-w11-owned';
   const SUPPORTED_PATH = /^\/(?:build-editor|abilities(?:\/[a-z0-9-]+)?|weapon-blessing-traits|weapons(?:\/[a-z0-9-]+){1,2})\/?$/i;
   const PATCH_CHANGED_EVIDENCE = Object.freeze({
-    'unknown-identity': '無法辨識目前遊戲版本或快照，保留原站內容。',
+    'unknown-identity': '目前沒有可信的本機資料身分，保留原站內容。',
     'identity-changed': '遊戲身分已變更，已還原原站內容。',
     'patch-selection-changed': '原站選用的遊戲版本已變更，已還原原站內容。',
     'patch-selection-ambiguous': '無法確認原站選用的遊戲版本，保留原站內容。',
-    'no-matching-presentation': '目前沒有安全對應的翻譯，保留原站內容。',
+    'no-matching-presentation': '目前沒有與本機資料精確相符的項目，保留原站內容。',
     disabled: '已切回原站內容。',
     disposed: '已切回原站內容。'
   });
@@ -56,7 +58,7 @@
 
   function normalizeSkillObservation(observation) {
     exactKeys(observation, ['structure', 'name', 'description'], 'native ability observation');
-    if (observation.structure !== 'gameslantern-ability-card-v1'
+    if (!['gameslantern-ability-card-v1', 'gameslantern-ability-detail-v1'].includes(observation.structure)
       || typeof observation.name !== 'string' || !observation.name.trim()
       || typeof observation.description !== 'string' || !observation.description.trim()) {
       throw new TypeError('native ability observation is incomplete');
@@ -159,6 +161,11 @@
   function stateText(state, lastClientResult) {
     if (state && state.reason && PATCH_CHANGED_EVIDENCE[state.reason]) return PATCH_CHANGED_EVIDENCE[state.reason];
     if (state && state.status === 'ready' && lastClientResult && lastClientResult.status === 'ready') {
+      const contentVersion = lastClientResult.snapshot && lastClientResult.snapshot.manifest
+        && lastClientResult.snapshot.manifest.contentVersion;
+      if (typeof contentVersion === 'string' && contentVersion.trim()) {
+        return '使用本機資料版本 ' + contentVersion + '；只翻譯與資料逐項相符的原文。';
+      }
       return lastClientResult.statusText || clientApi.getStatusText(lastClientResult);
     }
     return clientApi.getStatusText({ status: 'original', reason: state && state.reason || 'unknown-identity' });
@@ -169,6 +176,8 @@
     controls.setAttribute(OWNED_ATTRIBUTE, 'controls');
     controls.className = 'w11-extension-controls';
     controls.setAttribute('aria-label', '繁體翻譯控制');
+    const supportsPopover = typeof controls.showPopover === 'function';
+    if (supportsPopover) controls.setAttribute('popover', 'manual');
     const actions = document.createElement('div');
     actions.className = 'w11-extension-control-actions';
     const enable = document.createElement('button');
@@ -184,6 +193,13 @@
     actions.append(enable, original);
     controls.append(actions, status);
     (document.body || document.documentElement).append(controls);
+    if (supportsPopover) {
+      try {
+        controls.showPopover();
+      } catch (_) {
+        controls.removeAttribute('popover');
+      }
+    }
     return { controls, enable, original, status };
   }
 
@@ -196,8 +212,17 @@
     const evidenceProvider = createNativeEvidenceProvider({ document, adapter });
     const registry = pageRoot.W11TestProofRegistry;
     const proofs = registry && Array.isArray(registry.proofs) ? registry.proofs : [];
-    const identityResolver = identityApi.createNativeIdentityResolver({ proofs, cryptoApi: pageRoot.crypto });
     const rawClient = clientApi.createW10Client({ runtime: pageRoot.chrome.runtime });
+    const testProofMode = !!(registry && Array.isArray(registry.proofs));
+    const productionPin = pageRoot.W16ProductionDatasetPin;
+    const identityResolver = !testProofMode && productionPin && productionDatasetApi
+      && typeof productionDatasetApi.createProductionDatasetResolver === 'function'
+      ? productionDatasetApi.createProductionDatasetResolver({
+        pin: productionPin,
+        loadSnapshot: (identity) => rawClient.initialize(identity),
+        presentationApi
+      })
+      : identityApi.createNativeIdentityResolver({ proofs, cryptoApi: pageRoot.crypto });
     let lastClientResult = null;
     let controller = null;
     let currentState = { status: 'original', reason: 'unknown-identity' };
@@ -214,7 +239,7 @@
     }
 
     function syncBlessingReader(state) {
-      const shouldShow = pageRoot.location.pathname === '/weapon-blessing-traits'
+      const shouldShow = testProofMode && pageRoot.location.pathname === '/weapon-blessing-traits'
         && state && state.status === 'ready' && lastClientResult && lastClientResult.status === 'ready'
         && lastClientResult.snapshot;
       if (!shouldShow) {

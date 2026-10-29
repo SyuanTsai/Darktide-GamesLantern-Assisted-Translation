@@ -265,7 +265,7 @@
 
   function matchesSkillObservation(model, observation) {
     return !!model && !!observation
-      && observation.structure === 'gameslantern-ability-card-v1'
+      && ['gameslantern-ability-card-v1', 'gameslantern-ability-detail-v1'].includes(observation.structure)
       && visibleText(observation.name) === visibleText(model.nativeName)
       && visibleText(observation.description) === visibleText(model.nativeDescription);
   }
