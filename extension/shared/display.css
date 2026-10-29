@@ -38,6 +38,7 @@
 }
 
 .w11-extension-controls {
+  box-sizing: border-box;
   position: fixed;
   inset: auto 0.75rem 0.75rem auto;
   margin: 0;
@@ -50,6 +51,11 @@
   background: #111827;
   box-shadow: 0 2px 12px rgb(0 0 0 / 25%);
   font: 500 0.875rem/1.4 system-ui, sans-serif;
+}
+
+.w11-extension-controls.w11-extension-controls-with-reader {
+  width: min(24rem, calc(100vw - 1.5rem));
+  max-width: calc(100vw - 1.5rem);
 }
 
 .w11-extension-control-actions {
@@ -79,6 +85,17 @@
   border: 1px solid currentColor;
   color: inherit;
   overflow-wrap: anywhere;
+}
+
+.w11-extension-controls-with-reader > .w11-extension-blessing-reader {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  max-height: min(50vh, 28rem);
+  margin: 0.5rem 0 0;
+  padding: 0.5rem;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .w11-extension-blessing-reader label {

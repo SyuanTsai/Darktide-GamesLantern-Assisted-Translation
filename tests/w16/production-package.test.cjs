@@ -224,12 +224,23 @@ test('InterT10_ReleaseZipHasManifestAtRootAndExpandsToTheSameFileBytes', async (
   }
 });
 
-test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { timeout: 120000 }, async () => {
+test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { timeout: 120000 }, async (t) => {
   // Scenario: Given the exact ZIP extracted into a fresh Chrome profile and Root-observed native Brain Rupture markup, when the MV3 worker and content script run offline.
   // Purpose: Verify a real production package maps only an exact W15 item without test proof support, while changed native text stays untouched.
   const tempRoot = makeTempRoot();
   const profileRoot = createPrivateProfileRoot();
   let context;
+  let releasePendingVersionRequest = null;
+  let blessingCdp;
+  let versionRequestFinished = Promise.resolve();
+  const waitForStep = async (promise, label, timeoutMs = 10000) => {
+    let timer;
+    try {
+      return await Promise.race([promise, new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out waiting for ' + label)), timeoutMs);
+      })]);
+    } finally { clearTimeout(timer); }
+  };
   try {
     const result = await buildFixturePackage(tempRoot, { version: '1.0.0' });
     const extracted = path.join(tempRoot, 'chrome-install');
@@ -285,7 +296,6 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
     const extensionId = new URL(worker.url()).hostname;
     assert.equal(extensionId, installed.id);
 
-    await context.setOffline(true);
     const localBaseline = await worker.evaluate(async () => {
       const raw = await globalThis.W10SharedBaselineProvider.createBaselineProvider()();
       if (!raw) throw new Error('packaged baseline files were not readable from the installed extension');
@@ -342,6 +352,7 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
       ['/abilities', '<main><section id="brain-rupture">' + observedAbilityCard
         + '</section><section id="drifted-brain-rupture">' + driftedAbilityCard + '</section></main>'],
       ['/abilities/brain-rupture', detailAbility],
+      ['/weapon-blessing-traits', '<main><p id="native-blessing-page">Native blessing content remains unchanged.</p></main>'],
       ['/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe', weaponDetail(
         '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
         'Orestes Mk&nbsp;IV Assault Chainaxe',
@@ -355,6 +366,89 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
       const body = pageBodies.get(url.pathname) || '<main></main>';
       return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: '<!doctype html><html><body>' + body + '</body></html>' });
     });
+    const blessingPage = await context.newPage();
+    blessingCdp = await context.newCDPSession(blessingPage);
+    const blessingExecutionContexts = [];
+    blessingCdp.on('Runtime.executionContextCreated', (event) => {
+      blessingExecutionContexts.push(event.context);
+    });
+    await blessingCdp.send('Runtime.enable');
+    let releaseVersionRequest;
+    let resolveVersionRequestSeen;
+    let resolveVersionRequestFinished;
+    const versionRequestSeen = new Promise((resolve) => { resolveVersionRequestSeen = resolve; });
+    versionRequestFinished = new Promise((resolve) => { resolveVersionRequestFinished = resolve; });
+    const versionRequestGate = new Promise((resolve) => {
+      releaseVersionRequest = resolve;
+      releasePendingVersionRequest = resolve;
+    });
+    await context.route(builderModule.PRODUCTION_ORIGIN + '/version.json', async (route) => {
+      resolveVersionRequestSeen();
+      await versionRequestGate;
+      try { await route.abort('internetdisconnected'); }
+      finally { resolveVersionRequestFinished(); }
+    });
+    await blessingPage.goto('https://darktide.gameslantern.com/weapon-blessing-traits', {
+      waitUntil: 'domcontentloaded', timeout: 15000
+    });
+    assert.equal(await blessingPage.evaluate(() => typeof globalThis.W11TestProofRegistry), 'undefined');
+    await waitForStep(versionRequestSeen, 'the normal MV3 pinned snapshot request');
+    await blessingPage.waitForSelector('[data-w11-owned="controls"]', { timeout: 5000 });
+    assert.equal(await blessingPage.locator('[data-w11-owned="blessing-reader"]').count(), 0,
+      'the reader must remain absent while its normal-package snapshot request is pending');
+    assert.equal(await blessingPage.locator('#native-blessing-page').textContent(), 'Native blessing content remains unchanged.');
+
+    // Scenario: Given a pending local snapshot request, when the SPA leaves the blessing overview before it resolves.
+    // Purpose: Ensure late completion cannot insert the independent reader into an unrelated route.
+    await blessingPage.evaluate(() => {
+      history.pushState({}, '', '/abilities');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await blessingPage.waitForFunction(() => location.pathname === '/abilities');
+    assert.equal(await blessingPage.locator('[data-w11-owned="blessing-reader"]').count(), 0);
+    releaseVersionRequest();
+    await waitForStep(versionRequestFinished, 'completion of the delayed version request');
+    let contentEntryContextId = null;
+    const contextDiagnostics = [];
+    for (const executionContext of blessingExecutionContexts) {
+      if (!executionContext.auxData || executionContext.auxData.type !== 'isolated') continue;
+      try {
+        const probe = await blessingCdp.send('Runtime.evaluate', { contextId: executionContext.id,
+          returnByValue: true,
+          expression: 'JSON.stringify({entry: typeof globalThis.W11ContentEntry, instance: typeof globalThis.__W11_CONTENT_ENTRY_INSTANCE__, '
+            + 'loader: typeof globalThis.__W11_CONTENT_ENTRY_INSTANCE__?.identityResolver?.loadPinnedSnapshotForReading})' });
+        const summary = JSON.parse(probe.result.value || 'null');
+        contextDiagnostics.push({ id: executionContext.id, origin: executionContext.origin, summary });
+        if (summary && summary.instance === 'object' && summary.loader === 'function') {
+          contentEntryContextId = executionContext.id;
+          break;
+        }
+      } catch (error) { contextDiagnostics.push({ id: executionContext.id, error: error.message }); }
+    }
+    assert.ok(contentEntryContextId, 'the MV3 content-entry context must expose its own pinned snapshot loader: '
+      + JSON.stringify(contextDiagnostics));
+    const snapshotEvaluation = await waitForStep(blessingCdp.send('Runtime.evaluate', {
+      contextId: contentEntryContextId,
+      awaitPromise: true,
+      returnByValue: true,
+      expression: 'globalThis.__W11_CONTENT_ENTRY_INSTANCE__.identityResolver.loadPinnedSnapshotForReading()'
+        + '.then(snapshot => snapshot && snapshot.manifest.contentVersion)'
+    }), 'the content script validated snapshot promise');
+    assert.equal(snapshotEvaluation.result.value, '1.13.2.3',
+      'the delayed loader must resolve the same verified local snapshot: '
+        + JSON.stringify({ contextId: contentEntryContextId, result: snapshotEvaluation.result,
+          exception: snapshotEvaluation.exceptionDetails && snapshotEvaluation.exceptionDetails.text }));
+    assert.equal(await blessingPage.locator('[data-w11-owned="blessing-reader"]').count(), 0,
+      'a completed request from a stale route generation must not create the reader');
+    await blessingPage.evaluate(() => {
+      history.pushState({}, '', '/weapon-blessing-traits/');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { timeout: 15000 });
+    assert.equal(await blessingPage.evaluate(() => location.pathname), '/weapon-blessing-traits/',
+      'the supported overview reader also accepts the existing trailing-slash route');
+    await context.setOffline(true);
+
     const page = await context.newPage();
     await page.goto('https://darktide.gameslantern.com/abilities', { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => {
@@ -368,6 +462,83 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
       'a native description drift must stay in the original language');
     assert.equal(await page.locator('#drifted-brain-rupture [data-w11-owned="details"]').count(), 0);
     assert.equal(await page.locator('[data-w11-owned="blessing-reader"]').count(), 0);
+
+    assert.equal(await blessingPage.locator('[data-w11-owned="blessing-reader"]').count(), 1);
+    assert.equal(await blessingPage.locator('[data-w11-owned="controls"]').getAttribute('data-status'), 'original',
+      'the independent reader must not claim that a native blessing or tier was translated');
+    assert.match(await blessingPage.locator('[data-w11-blessing-reader-source]').textContent(),
+      /本機資料版本 1\.13\.2\.3.*獨立閱讀器.*未驗證此頁原生祝福或階級適用性/);
+    assert.equal(await blessingPage.locator('#native-blessing-page').textContent(), 'Native blessing content remains unchanged.');
+    assert.equal(await blessingPage.getByLabel('祝福', { exact: true }).inputValue(), '');
+    assert.equal(await blessingPage.getByLabel('祝福變體', { exact: true }).inputValue(), '');
+    await blessingPage.getByLabel('祝福', { exact: true }).selectOption({ index: 1 });
+    await blessingPage.getByLabel('祝福變體', { exact: true }).selectOption({ index: 1 });
+    await blessingPage.evaluate(() => {
+      const overlay = document.createElement('div');
+      overlay.id = 'a02-high-z-site-overlay';
+      overlay.setAttribute('aria-label', 'controlled site overlay');
+      Object.assign(overlay.style, {
+        position: 'fixed', inset: '0', zIndex: '2147483647', pointerEvents: 'auto',
+        background: 'rgb(0 0 0 / 2%)'
+      });
+      document.body.append(overlay);
+    });
+    const readerOverlay = blessingPage.locator('#a02-high-z-site-overlay');
+    const reader = blessingPage.locator('[data-w11-owned="blessing-reader"]');
+    const readerStatus = blessingPage.locator('[data-w11-blessing-reader-source]');
+    assert.equal(await readerOverlay.isVisible(), true, 'the controlled site overlay must remain visible');
+    assert.match(await readerStatus.textContent(), /本機資料版本 1\.13\.2\.3.*獨立閱讀器.*未驗證此頁原生祝福或階級適用性/);
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 390, height: 844 }]) {
+      await blessingPage.setViewportSize(viewport);
+      const layout = await blessingPage.evaluate(() => {
+        const controls = document.querySelector('[data-w11-owned="controls"]');
+        const reader = document.querySelector('[data-w11-owned="blessing-reader"]');
+        const style = getComputedStyle(reader);
+        const controlsBounds = controls.getBoundingClientRect();
+        return { readerInControls: reader.parentElement === controls,
+          overflowY: style.overflowY, maxHeight: Number.parseFloat(style.maxHeight),
+          controlsLeft: controlsBounds.left, controlsRight: controlsBounds.right };
+      });
+      assert.equal(layout.readerInControls, true, 'the production reader must use the existing top-layer controls');
+      assert.equal(layout.overflowY, 'auto', 'the reader content must scroll inside its bounded panel');
+      assert.ok(layout.maxHeight <= Math.min(viewport.height * 0.5, 448) + 1,
+        'the reader panel must stay below the viewport height limit');
+      assert.ok(layout.controlsLeft >= 0 && layout.controlsRight <= viewport.width,
+        'the controls and actions must remain inside the viewport');
+      await reader.getByRole('button', { name: 'LV1', exact: true }).click({ timeout: 2500 });
+      const readerTierOne = await blessingPage.locator('[data-w11-blessing-result]').textContent();
+      await reader.getByRole('button', { name: 'LV4', exact: true }).click({ timeout: 2500 });
+      const readerTierFour = await blessingPage.locator('[data-w11-blessing-result]').textContent();
+      assert.match(readerTierOne, /LV1/);
+      assert.match(readerTierOne, /17%/);
+      assert.match(readerTierFour, /LV4/);
+      assert.match(readerTierFour, /20%/);
+      assert.notEqual(readerTierFour, readerTierOne, 'the standalone reader must show the selected Source tier values');
+      assert.match(await blessingPage.locator('[data-w11-blessing-applicability]').textContent(), /尚未驗證/);
+      assert.equal(await readerStatus.isVisible(), true, 'the local data version and applicability note must remain readable');
+      const bounds = await reader.boundingBox();
+      assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= viewport.width,
+        'the blessing reader must stay inside the current viewport');
+      assert.equal(await readerOverlay.isVisible(), true, 'tier clicks must leave the site overlay untouched');
+    }
+    assert.equal(await blessingPage.locator('main [data-w11-owned="details"], main [data-w11-owned="weapon"]').count(), 0,
+      'reading local blessings must not create native translation records');
+    const readerBounds = await blessingPage.locator('[data-w11-owned="blessing-reader"]').boundingBox();
+    assert.ok(readerBounds && readerBounds.x >= 0 && readerBounds.x + readerBounds.width <= 390,
+      'the independent reader must remain within a 390px viewport');
+    await blessingPage.getByRole('button', { name: '切回原文' }).click({ timeout: 2500 });
+    await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { state: 'detached' });
+    assert.equal(await blessingPage.locator('[data-w11-owned="controls"]').getAttribute('data-status'), 'original');
+    assert.equal(await readerOverlay.isVisible(), true, 'ordinary restore must leave the site overlay untouched');
+    await blessingPage.getByRole('button', { name: '啟用繁體' }).click({ timeout: 2500 });
+    await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { timeout: 5000 });
+    assert.equal(await readerOverlay.isVisible(), true, 'ordinary re-enable must leave the site overlay untouched');
+    await readerOverlay.evaluate((element) => element.remove());
+    await blessingPage.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+    await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { state: 'detached' });
+    await blessingPage.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+    await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { timeout: 5000 });
+    assert.equal(await blessingPage.locator('[data-w11-owned="controls"]').getAttribute('data-status'), 'original');
 
     const detailPage = await context.newPage();
     await detailPage.goto('https://darktide.gameslantern.com/abilities/brain-rupture', { waitUntil: 'domcontentloaded' });
@@ -434,7 +605,13 @@ test('InterT20_ChromeLoadsTheReleaseZipAndVerifiesItsBundledBaselineOffline', { 
       'an unsupported native weapon tuple must remain in the original language');
     assert.equal(await unknownWeaponPage.locator('[data-w11-owned="weapon"]').count(), 0);
   } finally {
-    if (context) await context.close();
+    if (releasePendingVersionRequest) releasePendingVersionRequest();
+    if (context) {
+      try { await waitForStep(versionRequestFinished, 'delayed version request cleanup', 2000); } catch (_) { }
+      try { await context.unroute(builderModule.PRODUCTION_ORIGIN + '/version.json'); } catch (_) { }
+      await context.close();
+    }
+    if (blessingCdp) { try { await blessingCdp.detach(); } catch (_) { } }
     removePrivateProfileRoot(profileRoot);
     fs.rmSync(tempRoot, { recursive: true, force: true, maxRetries: 3 });
   }

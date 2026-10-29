@@ -97,10 +97,49 @@ test('UnitT20_ProductionDatasetAcceptsNewContentOnThePinnedSourceReleaseAndRejec
     manifestSha256: 'b'.repeat(64) };
   const sameLine = await resolverFor(snapshot).resolve(brainRuptureEvidence());
   assert.equal(sameLine.status, 'verified');
+  assert.equal(await resolverFor(snapshot).loadPinnedSnapshotForReading().then((value) => value.manifest.contentVersion),
+    '1.13.2.4', 'the independent reader may use a newly verified snapshot on the same pinned Source release');
 
   const wrongSnapshot = { ...baseline.snapshot,
     identity: { gameVersion: '1.13.1', gameReleaseId: 'darktide:1.13.1' },
     manifest: { ...baseline.snapshot.manifest, gameVersion: '1.13.1', gameReleaseId: 'darktide:1.13.1' } };
   assert.equal((await resolverFor(wrongSnapshot).resolve(brainRuptureEvidence())).reason,
     'no-matching-presentation');
+});
+
+test('UnitT30_ReaderSnapshotAccessDoesNotCreateNativeIdentityProof', async () => {
+  // Scenario: Given the pinned production snapshot loader but no native skill or weapon observations.
+  // Purpose: Let the independent reader use verified local data while the native resolver remains unknown.
+  const { snapshot } = await readBaselineSnapshot();
+  let loadCount = 0;
+  const resolver = createProductionDatasetResolver({ pin: GAME_LINE_PIN,
+    loadSnapshot: async (identity) => {
+      loadCount += 1;
+      return { status: 'ready', identity, snapshot };
+    } });
+  const loaded = await resolver.loadPinnedSnapshotForReading();
+  assert.equal(loaded, snapshot, 'the accessor returns only the already verified pinned snapshot');
+  assert.equal(await resolver.loadPinnedSnapshotForReading(), snapshot, 'the document reuses one validated snapshot promise');
+  assert.equal(loadCount, 1);
+
+  const overviewEvidence = serializeNativeSnapshot({ pathname: '/weapon-blessing-traits',
+    patch: { status: 'absent' }, skills: [], weapons: [] });
+  const proof = await resolver.resolve(overviewEvidence);
+  assert.equal(proof.status, 'unknown', 'an overview route is not a native identity proof');
+  assert.equal(proof.reason, 'no-matching-presentation');
+});
+
+test('UnitT40_ReaderSnapshotAccessRejectsWrongReleaseAndLoaderFailure', async () => {
+  // Scenario: Given a malformed or failed package response instead of the pinned Source release.
+  // Purpose: Keep the standalone reader fail-closed when its local data did not pass the production snapshot checks.
+  const { snapshot } = await readBaselineSnapshot();
+  const wrongSnapshot = { ...snapshot,
+    identity: { gameVersion: '1.13.1', gameReleaseId: 'darktide:1.13.1' },
+    manifest: { ...snapshot.manifest, gameVersion: '1.13.1', gameReleaseId: 'darktide:1.13.1' } };
+  const wrongResolver = createProductionDatasetResolver({ pin: GAME_LINE_PIN,
+    loadSnapshot: async (identity) => ({ status: 'ready', identity, snapshot: wrongSnapshot }) });
+  assert.equal(await wrongResolver.loadPinnedSnapshotForReading(), null);
+  const failedResolver = createProductionDatasetResolver({ pin: GAME_LINE_PIN,
+    loadSnapshot: async () => { throw new Error('fixture loader failure'); } });
+  assert.equal(await failedResolver.loadPinnedSnapshotForReading(), null);
 });
