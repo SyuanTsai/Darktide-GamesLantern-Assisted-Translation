@@ -150,15 +150,53 @@ async function launchBuilt(built, runtime) {
   try {
     context = await runtime.playwright.chromium.launchPersistentContext(path.join(profileRoot, 'p'), {
       executablePath: runtime.executablePath,
-      headless: true,
+      headless: false,
       viewport: { width: 1050, height: 760 },
       ignoreDefaultArgs: ['--disable-extensions'],
-      args: ['--disable-extensions-except=' + built.extensionPath, '--load-extension=' + built.extensionPath]
+      args: ['--window-position=-32000,-32000', '--enable-unsafe-extension-debugging']
     });
+
+    const managerPage = await context.newPage();
+    await managerPage.goto('chrome://extensions/');
+    const developerMode = await managerPage.evaluate(() => {
+      const manager = document.querySelector('extensions-manager');
+      const toolbar = manager && manager.shadowRoot && manager.shadowRoot.querySelector('extensions-toolbar');
+      const toggle = toolbar && toolbar.shadowRoot && toolbar.shadowRoot.querySelector('#devMode');
+      if (!toggle || toggle.disabled) return { available: false };
+      if (!toggle.checked) toggle.click();
+      return { available: true };
+    });
+    assert.equal(developerMode.available, true, 'Chrome developer mode control is unavailable in the fresh profile');
+    await managerPage.waitForFunction(() => {
+      const manager = document.querySelector('extensions-manager');
+      const toolbar = manager && manager.shadowRoot && manager.shadowRoot.querySelector('extensions-toolbar');
+      const toggle = toolbar && toolbar.shadowRoot && toolbar.shadowRoot.querySelector('#devMode');
+      return !!toggle && toggle.checked;
+    }, null, { timeout: 5000 });
+
+    const workerReady = context.waitForEvent('serviceworker', {
+      predicate: (candidate) => candidate.url().endsWith('/shared/service-worker.js'),
+      timeout: 20000
+    }).catch((error) => ({ error }));
+    const cdp = await context.browser().newBrowserCDPSession();
+    let installed;
+    try {
+      installed = await cdp.send('Extensions.loadUnpacked', { path: built.extensionPath });
+    } finally {
+      await cdp.detach();
+    }
+    assert.match(installed.id, /^[a-p]{32}$/, 'Chrome did not return a valid ID for the unpacked test extension');
+
     let worker = context.serviceWorkers().find((candidate) => candidate.url().endsWith('/shared/service-worker.js'));
-    if (!worker) worker = await context.waitForEvent('serviceworker', { timeout: 15000 });
+    if (!worker) {
+      const result = await workerReady;
+      if (result && result.error) throw result.error;
+      worker = result;
+    }
     assert.ok(worker.url().endsWith('/shared/service-worker.js'));
-    return { context, worker, extensionId: new URL(worker.url()).hostname, profileRoot };
+    const extensionId = new URL(worker.url()).hostname;
+    assert.equal(extensionId, installed.id, 'the started service worker must belong to the loaded unpacked extension');
+    return { context, worker, extensionId, profileRoot };
   } catch (error) {
     if (context) await context.close();
     removePrivateProfileRoot(profileRoot);
@@ -177,7 +215,9 @@ async function installGameRoutes(context, candidate) {
     const pathname = new URL(route.request().url()).pathname;
     const body = pathname === '/build-editor'
       ? '<main><div id="darktide-build-editor"><section><h2>Talent Tree Patch</h2><div><button class="bg-primary/20">Depths of the Damned<span>Live</span></button><button>Skitarii Class<span>Old</span></button></div></section></div></main>'
-      : '<main><div id="late-card-slot"></div></main>';
+      : pathname === '/weapon-blessing-traits'
+        ? '<main><p id="native-blessing-page">Native blessing content remains unchanged.</p><div id="late-card-slot"></div></main>'
+        : '<main><div id="late-card-slot"></div></main>';
     await route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8',
       body: '<!doctype html><html><head><meta charset="utf-8"><title>Games Lantern fixture</title></head><body>' + body + '</body></html>' });
   });
@@ -245,7 +285,8 @@ test('InterT10_RealMv3ContentEntryLoadsPinnedCandidateAndRestoresOnNativePatchCh
       throw error;
     });
     const controlsBeforeSlot = await abilityPage.locator('[data-w11-owned="controls"] [role="status"]').textContent();
-    assert.match(controlsBeforeSlot, /無法辨識|沒有可用/);
+    assert.equal(controlsBeforeSlot, '目前沒有可信的本機資料身分，保留原站內容。');
+    assert.equal(await abilityPage.locator('[data-w11-owned="controls"]').getAttribute('data-status'), 'original');
     await abilityPage.evaluate((markup) => document.querySelector('#late-card-slot').insertAdjacentHTML('beforeend', markup),
       makeCardMarkup(candidate.model));
     try {
@@ -286,7 +327,7 @@ test('InterT10_RealMv3ContentEntryLoadsPinnedCandidateAndRestoresOnNativePatchCh
     assert.equal(applied.name, candidate.model.translatedName);
     assert.equal(applied.description.replace(/\r/g, ''), candidate.model.translatedDescription);
     assert.equal(applied.detailsSummary, '詳細說明');
-    assert.match(applied.status, /已載入並驗證|已載入相容/);
+    assert.equal(applied.status, '使用本機資料版本 1.13.2.1；只翻譯與資料逐項相符的原文。');
     assert.equal(applied.ownedPanels, 1);
     const stableOwnedMutations = await abilityPage.evaluate(async () => {
       const controls = document.querySelector('[data-w11-owned="controls"]');
@@ -377,6 +418,17 @@ test('InterT10_RealMv3ContentEntryLoadsPinnedCandidateAndRestoresOnNativePatchCh
 
     const blessingPage = await started.context.newPage();
     await blessingPage.goto(GAME_ORIGIN + '/weapon-blessing-traits', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await blessingPage.waitForSelector('[data-w11-owned="controls"]', { timeout: 5000 });
+    await blessingPage.waitForFunction(() => document.querySelector('[data-w11-owned="controls"]')?.dataset.status === 'original'
+      && document.querySelector('[data-w11-owned="controls"] [role="status"]')?.textContent === '目前沒有可信的本機資料身分，保留原站內容。',
+    null, { timeout: 10000 });
+    assert.equal(await blessingPage.locator('[data-w11-owned="controls"]').getAttribute('data-status'), 'original',
+      'the empty blessing page has no trusted native identity before the fixed candidate card appears');
+    await blessingPage.evaluate((markup) => document.querySelector('#late-card-slot').insertAdjacentHTML('beforeend', markup),
+      makeCardMarkup(candidate.model));
+    await blessingPage.waitForFunction((expectedName) => document.querySelector('#native-card .font-teko')?.textContent === expectedName
+      && document.querySelector('#native-card [data-w11-owned="details"]') !== null,
+    candidate.model.translatedName, { timeout: 15000 });
     await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { timeout: 45000 });
     assert.equal(candidate.blessings.length, 4, 'reader must receive all four Source tier models');
     assert.equal(await blessingPage.getByLabel('祝福', { exact: true }).inputValue(), '');
@@ -398,8 +450,12 @@ test('InterT10_RealMv3ContentEntryLoadsPinnedCandidateAndRestoresOnNativePatchCh
     assert.match(blessingTierFour, /LV4/);
     assert.match(blessingTierFour, /20%/);
     assert.notEqual(blessingTierFour, blessingTierOne, 'tier change must replace the complete blessing values and details');
-    assert.equal(await blessingPage.locator('#late-card-slot').textContent(), '',
-      'reader-only page must not claim or rewrite an unverified native blessing row');
+    assert.equal(await blessingPage.locator('#native-card .font-teko').textContent(), candidate.model.translatedName,
+      'the reader test page must have a real fixed-candidate native card matching its test proof');
+    assert.equal(await blessingPage.locator('#native-blessing-page').textContent(), 'Native blessing content remains unchanged.',
+      'a matched skill proof must not claim or rewrite unrelated native blessing content');
+    assert.equal(await blessingPage.locator('#native-blessing-page [data-w11-owned]').count(), 0,
+      'the independent blessing reader must not claim an unverified native blessing row');
     await blessingPage.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
     await blessingPage.waitForSelector('[data-w11-owned="blessing-reader"]', { state: 'detached' });
     await blessingPage.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
@@ -486,7 +542,7 @@ test('InterT20_NormalBuildHasNoTestProofAndLeavesUnknownNativeFactsUntouched', {
     assert.equal(state.name, 'Brain Rupture');
     assert.equal(state.description, 'Native first paragraph.Native second paragraph.');
     assert.equal(state.ownedContent, 0);
-    assert.match(state.status, /無法辨識|目前沒有可用/);
+    assert.equal(state.status, '目前沒有可信的本機資料身分，保留原站內容。');
     assert.equal(state.registryPresent, false);
     assert.deepEqual(requests, []);
   } finally {

@@ -173,7 +173,7 @@
         ...(evidence.patch.status === 'selected' ? { patchLabel: evidence.patch.label } : {}) });
     }
 
-    return Object.freeze({ resolve, pin, identity });
+    return Object.freeze({ resolve, loadPinnedSnapshotForReading: getPinnedSnapshot, pin, identity });
   }
 
   return Object.freeze({ createProductionDatasetResolver, normalizePin, parseNativeEvidence });

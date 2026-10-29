@@ -228,18 +228,96 @@
     let currentState = { status: 'original', reason: 'unknown-identity' };
     let blessingReader = null;
     let blessingReaderSnapshot = null;
+    let blessingReaderIndependent = false;
+    let readerSnapshot = null;
+    let readerLoadPromise = null;
+    let readerLoadAttempted = false;
+    let readerLoadGeneration = 0;
+    let readerSuspended = false;
     let userEnabledIntent = true;
+    let disposed = false;
     const ui = createControls(document);
 
     function clearBlessingReader() {
-      if (!blessingReader) return;
-      blessingReader.dispose();
+      if (blessingReader) blessingReader.dispose();
       blessingReader = null;
       blessingReaderSnapshot = null;
+      if (blessingReaderIndependent) ui.controls.classList.remove('w11-extension-controls-with-reader');
+      blessingReaderIndependent = false;
+    }
+
+    function readerRouteIsSupported() {
+      return /^\/weapon-blessing-traits\/?$/i.test(pageRoot.location.pathname);
+    }
+
+    function canShowIndependentReader() {
+      return !disposed && !readerSuspended && userEnabledIntent && readerRouteIsSupported()
+        && !testProofMode && identityResolver
+        && typeof identityResolver.loadPinnedSnapshotForReading === 'function';
+    }
+
+    function appendBlessingReader(snapshot, independent) {
+      let models;
+      try { models = presentationApi.buildBlessingViewModels(snapshot, {}); } catch (_) { models = []; }
+      if (!Array.isArray(models) || models.length === 0) return;
+      try {
+        blessingReader = adapterApi.createDomAdapter({ document }).createBlessingReader(models);
+        blessingReaderSnapshot = snapshot;
+        if (independent) {
+          blessingReaderIndependent = true;
+          ui.controls.classList.add('w11-extension-controls-with-reader');
+          const note = document.createElement('p');
+          note.setAttribute('data-w11-blessing-reader-source', '');
+          const contentVersion = snapshot.manifest && snapshot.manifest.contentVersion;
+          note.textContent = '本機資料版本 ' + contentVersion + '；獨立閱讀器，未驗證此頁原生祝福或階級適用性。';
+          blessingReader.element.insertBefore(note, blessingReader.element.children[1] || null);
+        }
+        (independent ? ui.controls : (document.body || document.documentElement)).append(blessingReader.element);
+      } catch (_) {
+        clearBlessingReader();
+      }
+    }
+
+    function invalidateIndependentReader() {
+      readerLoadGeneration += 1;
+      readerLoadPromise = null;
+      clearBlessingReader();
     }
 
     function syncBlessingReader(state) {
-      const shouldShow = testProofMode && pageRoot.location.pathname === '/weapon-blessing-traits'
+      if (!testProofMode) {
+        if (!canShowIndependentReader()) {
+          if (blessingReader || readerLoadPromise) invalidateIndependentReader();
+          return;
+        }
+        if (blessingReader && blessingReaderSnapshot === readerSnapshot) return;
+        if (readerSnapshot) {
+          clearBlessingReader();
+          appendBlessingReader(readerSnapshot, true);
+          return;
+        }
+        if (readerLoadPromise) return;
+        if (readerLoadAttempted) return;
+        const generation = ++readerLoadGeneration;
+        const pending = Promise.resolve().then(() => identityResolver.loadPinnedSnapshotForReading());
+        readerLoadPromise = pending;
+        pending.then((snapshot) => {
+          if (readerLoadPromise === pending) readerLoadPromise = null;
+          if (generation !== readerLoadGeneration) return;
+          readerLoadAttempted = true;
+          if (!snapshot || !canShowIndependentReader()) return;
+          readerSnapshot = snapshot;
+          appendBlessingReader(snapshot, true);
+        }, () => {
+          if (readerLoadPromise === pending) {
+            readerLoadPromise = null;
+            readerLoadAttempted = true;
+          }
+        });
+        return;
+      }
+
+      const shouldShow = pageRoot.location.pathname === '/weapon-blessing-traits'
         && state && state.status === 'ready' && lastClientResult && lastClientResult.status === 'ready'
         && lastClientResult.snapshot;
       if (!shouldShow) {
@@ -248,16 +326,7 @@
       }
       if (blessingReader && blessingReaderSnapshot === lastClientResult.snapshot) return;
       clearBlessingReader();
-      let models;
-      try { models = presentationApi.buildBlessingViewModels(lastClientResult.snapshot, {}); } catch (_) { models = []; }
-      if (!Array.isArray(models) || models.length === 0) return;
-      try {
-        blessingReader = adapterApi.createDomAdapter({ document }).createBlessingReader(models);
-        blessingReaderSnapshot = lastClientResult.snapshot;
-        (document.body || document.documentElement).append(blessingReader.element);
-      } catch (_) {
-        clearBlessingReader();
-      }
+      appendBlessingReader(lastClientResult.snapshot, false);
     }
 
     function renderStatus(state = currentState) {
@@ -287,38 +356,58 @@
     });
     const onEnable = () => {
       userEnabledIntent = true;
+      readerSuspended = false;
+      syncBlessingReader(currentState);
       void controller.setEnabled(true);
     };
     const onOriginal = () => {
       userEnabledIntent = false;
+      invalidateIndependentReader();
       void controller.setEnabled(false);
     };
     const onPageHide = (event) => {
       if (event && event.persisted) {
+        readerSuspended = true;
+        invalidateIndependentReader();
         void controller.setEnabled(false);
         return;
       }
       dispose();
     };
     const onPageShow = (event) => {
-      if (event && event.persisted && userEnabledIntent) void controller.setEnabled(true);
+      if (event && event.persisted) {
+        readerSuspended = false;
+        if (userEnabledIntent) {
+          syncBlessingReader(currentState);
+          void controller.setEnabled(true);
+        }
+      }
     };
+    const onReaderRouteChange = () => syncBlessingReader(currentState);
     ui.enable.addEventListener('click', onEnable);
     ui.original.addEventListener('click', onOriginal);
     pageRoot.addEventListener('pagehide', onPageHide);
     pageRoot.addEventListener('pageshow', onPageShow);
+    pageRoot.addEventListener('popstate', onReaderRouteChange);
+    pageRoot.addEventListener('hashchange', onReaderRouteChange);
     const startPromise = controller.start().catch(() => renderStatus({ status: 'original', reason: 'worker-unavailable' }));
-    let disposed = false;
+    syncBlessingReader(currentState);
 
     function dispose() {
       if (disposed) return;
       disposed = true;
+      readerLoadGeneration += 1;
+      readerLoadPromise = null;
+      readerSnapshot = null;
+      readerLoadAttempted = false;
       controller.dispose();
       clearBlessingReader();
       ui.enable.removeEventListener('click', onEnable);
       ui.original.removeEventListener('click', onOriginal);
       pageRoot.removeEventListener('pagehide', onPageHide);
       pageRoot.removeEventListener('pageshow', onPageShow);
+      pageRoot.removeEventListener('popstate', onReaderRouteChange);
+      pageRoot.removeEventListener('hashchange', onReaderRouteChange);
       if (ui.controls.parentNode) ui.controls.parentNode.removeChild(ui.controls);
     }
 

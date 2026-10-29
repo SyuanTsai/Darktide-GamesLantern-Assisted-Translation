@@ -4,17 +4,20 @@
 
 ## 可交付候選
 
-- 外掛版號：`0.2.32`
-- ZIP：`darktide-gameslantern-zh-tw-0.2.32.zip`
-- ZIP SHA-256：`cb79c83ca7c40a6fffdee4d272f0851632a862f74572053303e648bcb972d3ac`
+- 外掛版號：`0.2.33`
+- ZIP：`F:\GitFile\Persion - Games\DarkTide-Web\.tmp\w16-startup-20261028\a02\upload-kit-0.2.33-ready\darktide-gameslantern-zh-tw-0.2.33.zip`
+- ZIP SHA-256：`2dfaa04cc3d6f2420855a49a1ac9dc49b5cdc2ef1f7115eb17d78966b7da77f9`
 - 封裝內容：W15 `1.13.2.3`，data revision `f182e7b4ba6fb04c9713ebada2cdbc8aabdd31d5b52b30a754e188ecc3fb5b2f`
 - receipt：ZIP 同目錄的 `package-receipt.json`，只作內部來源與 bytes 核對，不上傳。
-- 驗證：W16 production package suite `7 passed / 0 failed / 0 skipped`，包含 fresh-profile Chrome MV3 worker、ZIP 內離線 baseline 核對、Brain Rupture 列表與明細、鏈斧 Mk IV 的固定 DOM 驗證／原文還原，以及未映射 lasgun 保留原文。W11 DOM 回歸另為 `9 passed / 0 failed / 0 skipped`。
-- Root 的去重 targeted verification `34 passed / 0 failed / 0 skipped` 與更新後 infantry-lasgun 負例 `1 passed / 0 failed / 0 skipped` 是控制列修正前的結果。修正後 focused production MV3 控制列回歸 `1 passed / 0 failed / 0 skipped`：在 `1280x900` 與 `390x844`，普通滑鼠點擊可切回原文及重新啟用，最高層覆蓋仍可見，且沒有 modal 或焦點陷阱；W11 content-entry 測試 `6 passed / 0 failed / 0 skipped`。
-- 最終 ZIP 真站結果：Root 以本指南 SHA 的固定 ZIP 實測 Brain Rupture `/abilities` 頁，正向翻譯、普通滑鼠點擊切回原文與重新啟用均通過；六個固定公開 JSON GET 不帶 Cookie 或 Authorization。沒有 routing mock 或注入 test proof。真站技能明細與武器路徑先前 HTTP 403，未再重試；它們只有固定 DOM 的 MV3 測試結果，不能標示為真站驗收。
-- 控制列修正後，Root 已重跑完整去重定向檢查：`34 passed / 0 failed / 0 skipped`，包含更新的普通點擊覆蓋測試與未知型號拒絕。
+- A01 歷史驗證：production package suite `7 passed / 0 failed / 0 skipped`，W11 DOM 回歸 `9 passed / 0 failed / 0 skipped`；這些是 `0.2.32` 的結果。
+- A02 Unit `10 passed / 0 failed / 0 skipped`；正常 production package 與 W11 MV3 reader 回歸各 `1 passed / 0 failed / 0 skipped`。W11 reader 測試以固定候選技能卡和 test-only proof 讓原本的 ready 條件成立；這不表示原生祝福項目已被識別，proof 也未放入正式 ZIP。
+- 最終去重 targeted suite：`38 passed / 0 failed / 0 skipped`。包含最高層覆蓋仍可見時，在 `1280x900` 與 `390x844` 普通點擊 LV1/LV4、切回原文與重新啟用；閱讀器位於右下控制面板的非模態 popover 內，面板可捲動且不溢出。
+- Root 由 clean index 重建後核對封裝內 `30/30` 檔案與工作樹內容逐 byte 相同。
+- 最終 ZIP 真站結果：此 SHA 的 ZIP 在 `/weapon-blessing-traits` HTTPS 頁面通過普通 LV1/LV4 操作、切回原文與重新啟用，native 狀態保持 original；六個固定公開 JSON GET 不帶 Cookie 或 Authorization，沒有 routing mock、test proof 或 extension error。真站閱讀器在右下控制面板內，桌面與 390px 版面均可用；兩種寬度都能展開並捲讀既有「條件」說明。本次快照沒有術語區，這次真站驗證不代表已驗過五節或術語。
+- 本次 ZIP 的 `/abilities` 請求被 HTTP 403 阻擋；detail 與 weapon 路徑未重試。較早 A01 `/abilities` 正向結果只適用於歷史 ZIP `0.2.32`。detail／weapon 正向結果仍是固定 DOM 的 MV3 驗證，不能標示為本次真站驗收。
+- 先前 A02 候選 `c9a183f2…` 曾在 390px 被廣告覆蓋攔截普通按鈕操作，已由本 SHA 取代，不要上傳舊 ZIP。
 
-正式 Store item ID、目前已發布版號、開發者聯絡方式和 Dashboard 欄位值尚未在本指南固定。請從已驗證的既有 Store item 讀取這些欄位，不要建立新 item 或猜填。若既有 item 版號低於 `0.2.32`，可使用此 ZIP；若版號為 `0.2.32` 或更高，依下方命令重建一個高於 Dashboard 實際版號的候選。
+正式 Store item ID、目前已發布版號、開發者聯絡方式和 Dashboard 欄位值尚未在本指南固定。請從已驗證的既有 Store item 讀取這些欄位，不要建立新 item 或猜填。若既有 item 版號低於 `0.2.33`，可使用 Root 最終收據中記載的 ZIP；若版號為 `0.2.33` 或更高，依下方命令重建一個高於 Dashboard 實際版號的候選。
 
 ## Listing 欄位草稿
 
@@ -31,6 +34,8 @@
 **簡短說明**
 
 `使用已驗證的本機資料提供繁體中文顯示；只有精確原生身分符合時才替換頁面文字。`
+
+此外，既有 `/weapon-blessing-traits` 頁面的右下控制面板內提供可捲動的獨立本機祝福參考閱讀器。它允許使用者選擇祝福、變體與階級，並明示本機資料版本；它不表示該頁原生祝福、變體或適用階級已完成身分驗證或翻譯。
 
 **遠端程式碼**
 
@@ -71,18 +76,18 @@ Manifest 的普通 `permissions` 為空陣列，沒有 optional permissions。�
 ## 實際上傳步驟
 
 1. 在已核對的既有 Store item 中確認 item ID、目前版號、聯絡方式及 Privacy 欄位。若無法確認要更新哪個 item，先停止 Dashboard 操作，不建立另一個項目。
-2. 比較目前版號與 `0.2.32`。若目前低於 `0.2.32`，使用本指南列出的候選 ZIP。若目前為 `0.2.32` 或更高，替換為高於實際版號的下一個有效版本。每次指定新的、尚不存在的輸出目錄：
+2. 比較目前版號與 `0.2.33`。若目前低於 `0.2.33`，使用 Root 最終收據列出的候選 ZIP。若目前為 `0.2.33` 或更高，替換為高於實際版號的下一個有效版本。每次指定新的、尚不存在的輸出目錄：
 
    ```powershell
    npm run test:w16:package
-   npm run package:w16:release -- --version 0.2.32 --output-dir <new-absolute-output-directory>
+   npm run package:w16:release -- --version 0.2.33 --output-dir <new-absolute-output-directory>
    ```
 
-   `0.2.32` 是本次候選版號；程式只驗 Chrome manifest 版號格式，不會替你核實商店目前版號。
+   `0.2.33` 是本次候選版號；程式只驗 Chrome manifest 版號格式，不會替你核實商店目前版號。
 3. 上傳前用 `Get-FileHash <zip-path> -Algorithm SHA256` 核對候選 ZIP SHA。若有重建，以新 `package-receipt.json` 的版號、W15 identity、檔案 inventory 和 archive SHA 為準；不要沿用舊 receipt。
 4. 在既有 item 的 Dashboard 選擇上傳 ZIP 功能，只選 `.zip`，不要上傳 unpacked 資料夾或 receipt。確認 Dashboard 讀到的 manifest 版號、權限、網站範圍與本文件一致；若出現額外權限或 ZIP 錯誤，先停止並記錄錯誤。
 5. 將實際 item ID、上傳版號、檔案 SHA、上傳／處理狀態與 Dashboard 顯示的 review state 記入交付紀錄。只有 Dashboard 顯示成功處理才可稱已上傳；只有實際狀態更新才可稱已送審或已核准。
 
 ## 重要功能限制
 
-正式包不含 W11 測試用 proof registry；它以已驗證的 W15 資料集逐項比對原生名稱、描述、路徑與武器圖示，只翻譯唯一精確匹配。真站目前已驗證 Brain Rupture `/abilities` 頁；技能詳細頁與武器路徑因 HTTP 403 尚無 live 結果。固定 DOM MV3 測試通過不等於這些 live route 已驗收，也不能宣稱 GamesLantern 整站版本等於 W15 資料版本。未知或漂移項目仍保留原文；不得把 test proof 加入商店 ZIP。
+正式包不含 W11 測試用 proof registry；它以已驗證的 W15 資料集逐項比對原生名稱、描述、路徑與武器圖示，只翻譯唯一精確匹配。A02 增加的祝福閱讀器只是本機資料參考：右下控制面板會顯示本機資料版號，並說明尚未驗證此頁原生祝福或階級適用性；它不會建立原生翻譯記錄。此 SHA 的真站祝福閱讀器已驗證；本次 `/abilities` 被 HTTP 403 阻擋，detail 與 weapon 路徑未測。較早 A01 `/abilities` 正向證據只屬於 `0.2.32` ZIP。固定 DOM MV3 測試通過不等於其他 live route 已驗收，也不能宣稱 GamesLantern 整站版本等於 W15 資料版本。未知或漂移項目仍保留原文；不得把 test proof 加入商店 ZIP。

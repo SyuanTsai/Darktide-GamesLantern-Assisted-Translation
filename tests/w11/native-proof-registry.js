@@ -16,8 +16,8 @@
           snapshotId: 'psyker-skills-blessings-1.13.2-18-files' })
       },
       {
-        evidenceId: 'w11-test-only-reader-page-without-native-blessing-match',
-        sha256: 'f2bc1a4cd9ba35a6eb9951649d7cd605a9f1a7e27a42e851439499e639113dc0',
+        evidenceId: 'w11-test-only-approved-reader-page-with-brain-rupture-card',
+        sha256: '4265e2f772752e2b6ca9294e6699133b8780bbc0be118d531a4fb53c542d08fd',
         identity: Object.freeze({ gameVersion: '1.13.2', gameReleaseId: 'darktide:1.13.2',
           snapshotId: 'psyker-skills-blessings-1.13.2-18-files' })
       }
