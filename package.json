@@ -25,7 +25,7 @@
     "test:w11": "npm run test:w11:unit && npm run test:w11:dom && npm run test:w11:mv3",
     "icons:w16:render": "node scripts/release/render-icons.cjs",
     "package:w16:release": "node scripts/release/build-production-extension.cjs",
-    "test:w16:package": "node --test --test-concurrency=1 tests/w16/production-package.test.cjs"
+    "test:w16:package": "node --test --test-concurrency=1 tests/w16/production-dataset.test.cjs tests/w16/production-package.test.cjs"
   },
   "devDependencies": {
     "playwright": "1.62.1"

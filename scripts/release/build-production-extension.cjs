@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { webcrypto } = require('node:crypto');
 const contract = require('../../extension/shared/contract.js');
+const productionDataset = require('../../extension/shared/production-dataset.js');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const PRODUCTION_ORIGIN = 'https://darktide.tw-syuan.com';
@@ -16,7 +17,7 @@ const CORE_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
 const SHARED_FILES = Object.freeze([
   'contract.js', 'domains.js', 'loader.js', 'snapshot-store.js', 'update-coordinator.js',
   'document-session.js', 'baseline-provider.js', 'client.js', 'service-worker.js',
-  'native-identity.js', 'view-model.js', 'presentation.js', 'dom-adapter.js',
+  'native-identity.js', 'view-model.js', 'presentation.js', 'production-dataset.js', 'dom-adapter.js',
   'dom-controller.js', 'content-entry.js', 'display.css'
 ]);
 const CONTENT_MATCHES = Object.freeze([
@@ -194,6 +195,22 @@ async function readBaseline(directory) {
   return { files, version, manifest };
 }
 
+function buildDatasetPin(manifest, manifestSha256) {
+  return productionDataset.normalizePin({
+    schema: 'w16-production-dataset-pin/1',
+    gameVersion: manifest.gameVersion,
+    gameReleaseId: manifest.gameReleaseId,
+    contentVersion: manifest.contentVersion,
+    dataRevision: manifest.dataRevision,
+    manifestSha256
+  });
+}
+
+function datasetPinScript(pin) {
+  return "'use strict';\n"
+    + 'globalThis.W16ProductionDatasetPin = Object.freeze(' + JSON.stringify(pin, null, 2) + ');\n';
+}
+
 function buildManifest(version) {
   return {
     manifest_version: 3,
@@ -209,8 +226,8 @@ function buildManifest(version) {
       js: [
         'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
         'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
-        'shared/view-model.js', 'shared/presentation.js', 'shared/dom-adapter.js',
-        'shared/dom-controller.js', 'shared/content-entry.js'
+        'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
+        'shared/dom-controller.js', 'shared/production-dataset-pin.js', 'shared/content-entry.js'
       ],
       css: ['shared/display.css'],
       run_at: 'document_idle',
@@ -274,6 +291,7 @@ async function buildProductionExtensionPackage(options = {}) {
   const baseline = await readBaseline(baselineDirectory);
   const icons = readIcons(iconDirectory);
   const manifest = buildManifest(version);
+  const datasetPin = buildDatasetPin(baseline.manifest, baseline.files.get('manifest.json').sha256);
   const packageDirectory = path.join(outputDirectory, 'unpacked');
   const archiveName = 'darktide-gameslantern-zh-tw-' + version + '.zip';
   const archivePath = path.join(outputDirectory, archiveName);
@@ -285,6 +303,8 @@ async function buildProductionExtensionPackage(options = {}) {
     const source = requireRegularFile(path.join(REPOSITORY_ROOT, 'extension', 'shared', relative), 'shared runtime file ' + relative);
     copyRaw(fs.readFileSync(source), path.join(packageDirectory, 'shared', relative));
   }
+  writeNew(path.join(packageDirectory, 'shared', 'production-dataset-pin.js'),
+    Buffer.from(datasetPinScript(datasetPin), 'utf8'));
   for (const relative of Object.keys(BASELINE_PINS)) {
     const targetRelative = relative === 'version.json' || relative === 'manifest.json'
       ? 'baseline/' + relative : 'baseline/' + relative;

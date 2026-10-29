@@ -29,6 +29,9 @@
     if (record.type === 'characterData') {
       return !!(record.target.parentElement && record.target.parentElement.closest('[data-w11-owned]'));
     }
+    if (record.type === 'attributes') {
+      return !!(record.target && record.target.closest && record.target.closest('[data-w11-owned]'));
+    }
     if (record.type !== 'childList') return false;
     if (record.target && record.target.nodeType === 1
       && (record.target.hasAttribute('data-w11-owned') || !!record.target.closest('[data-w11-owned]'))) return true;
@@ -54,6 +57,7 @@
     const dom = adapter || adapterApi.createDomAdapter({ document });
     const view = document.defaultView;
     const records = new Map();
+    const blockedSlots = new WeakMap();
     let currentIdentity = null;
     let pinnedSnapshot = null;
     let models = [];
@@ -119,7 +123,8 @@
             void scan();
           }
         });
-        observer.observe(root, { childList: true, characterData: true, subtree: true });
+        observer.observe(root, { childList: true, characterData: true, attributes: true,
+          attributeFilter: ['href', 'src', 'alt', 'contenteditable'], subtree: true });
       }
       if (view) {
         view.addEventListener('popstate', onRouteChange);
@@ -155,14 +160,33 @@
     }
 
     function reconcileRecords(slots) {
-      const slotAnchors = new Set(slots.map((slot) => slot.anchor));
+      const byAnchor = new Map(slots.map((slot) => [slot.anchor, slot]));
       for (const [anchor, record] of records) {
-        if (!slotAnchors.has(anchor) || record.changes.some((change) =>
-          !change.node.isConnected || change.node.nodeValue !== change.writtenValue)) {
+        const entry = byAnchor.get(anchor);
+        const identityChanged = !!entry && record.identityKey !== undefined
+          && record.identityKey !== entry.slot.identityKey;
+        let sourceStillMatches = false;
+        if (entry && !identityChanged && record.kind === 'skill' && record.model) {
+          sourceStillMatches = presentationApi.matchesSkillObservation(record.model, dom.observe(entry.slot, record));
+        } else if (entry && !identityChanged && record.kind === 'weapon' && record.mark) {
+          sourceStillMatches = presentationApi.matchesWeaponObservation(record.mark, dom.observeWeapon(entry.slot, record));
+        }
+        const changed = record.changes.some((change) =>
+          !change.node.isConnected || change.node.nodeValue !== change.writtenValue);
+        if (!entry || identityChanged || changed || !sourceStillMatches) {
+          if (identityChanged) blockedSlots.set(anchor, record.identityKey);
           dom.restore(record);
           records.delete(anchor);
         }
       }
+      const blocked = new Set();
+      for (const entry of slots) {
+        const expectedIdentityKey = blockedSlots.get(entry.anchor);
+        if (expectedIdentityKey === undefined) continue;
+        if (entry.slot.identityKey === expectedIdentityKey) blockedSlots.delete(entry.anchor);
+        else blocked.add(entry.anchor);
+      }
+      return blocked;
     }
 
     async function performScan() {
@@ -188,7 +212,8 @@
       }
       if (!proof || proof.status !== 'verified' || !proof.identity) {
         if (currentIdentity) stopWithReason('identity-changed');
-        else setState('original', 'unknown-identity', null);
+        else setState('original', proof && proof.reason === 'no-matching-presentation'
+          ? proof.reason : 'unknown-identity', null);
         return;
       }
 
@@ -233,25 +258,30 @@
         ...dom.collectSkillSlots(root).map((slot) => ({ kind: 'skill', slot, anchor: slot.anchor })),
         ...dom.collectWeaponSlots(root).map((slot) => ({ kind: 'weapon', slot, anchor: slot.heading }))
       ];
-      reconcileRecords(slots);
+      const invalidated = reconcileRecords(slots);
       for (const entry of slots) {
-        if (records.has(entry.anchor)) continue;
+        if (records.has(entry.anchor) || invalidated.has(entry.anchor)) continue;
         let record = null;
         if (entry.kind === 'skill') {
           const observation = dom.observe(entry.slot);
           const matches = models.filter((model) => presentationApi.matchesSkillObservation(model, observation));
-          if (matches.length === 1) record = dom.applySkill(entry.slot, matches[0]);
+          if (matches.length === 1) {
+            record = dom.applySkill(entry.slot, matches[0]);
+            if (record) { record.kind = 'skill'; record.model = matches[0]; }
+          }
         } else {
           const observation = dom.observeWeapon(entry.slot);
           const matches = weaponFamilies.flatMap((family) => family.marks.map((mark) => ({ family, mark })))
             .filter(({ mark }) => presentationApi.matchesWeaponObservation(mark, observation));
-          if (matches.length === 1) record = dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark,
-            matches[0].family.marks);
+          if (matches.length === 1) {
+            record = dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark, matches[0].family.marks);
+            if (record) { record.kind = 'weapon'; record.mark = matches[0].mark; }
+          }
         }
         if (record) records.set(entry.anchor, record);
       }
-      const anyModels = models.length + weaponFamilies.length > 0;
-      setState(anyModels ? 'ready' : 'original', anyModels ? null : 'no-matching-presentation', currentIdentity);
+      const hasAppliedPresentation = records.size > 0;
+      setState(hasAppliedPresentation ? 'ready' : 'original', hasAppliedPresentation ? null : 'no-matching-presentation', currentIdentity);
     }
 
     function scan() {

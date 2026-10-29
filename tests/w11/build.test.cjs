@@ -37,7 +37,7 @@ test('UnitT10_DevManifestLoadsOnlyLocalW11ContentModulesOnSupportedGameRoutes', 
     const expectedScripts = [
       'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
       'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
-      'shared/view-model.js', 'shared/presentation.js', 'shared/dom-adapter.js',
+      'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
       'shared/dom-controller.js'
     ];
 
@@ -76,7 +76,7 @@ test('UnitT10_DevManifestLoadsOnlyLocalW11ContentModulesOnSupportedGameRoutes', 
         'manifest.json',
         'shared/baseline-provider.js', 'shared/client.js', 'shared/contract.js', 'shared/document-session.js',
         'shared/dom-adapter.js', 'shared/dom-controller.js', 'shared/domains.js', 'shared/display.css',
-        'shared/loader.js', 'shared/native-identity.js', 'shared/presentation.js', 'shared/service-worker.js',
+        'shared/loader.js', 'shared/native-identity.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/service-worker.js',
         'shared/snapshot-store.js', 'shared/update-coordinator.js', 'shared/view-model.js',
         'shared/content-entry.js', 'w10-harness.html', 'w10-harness.js'
       ]);
