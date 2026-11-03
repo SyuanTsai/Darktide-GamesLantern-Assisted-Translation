@@ -11,7 +11,7 @@ const { createPrivateProfileRoot, loadRuntime, removePrivateProfileRoot } = requ
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const BUILDER_PATH = path.join(REPOSITORY_ROOT, 'scripts', 'release', 'build-production-extension.cjs');
-const BASELINE_DIR = path.join(REPOSITORY_ROOT, 'extension', 'release-baseline', 'w15');
+const { ensureW15Baseline } = require('../../scripts/release/release-baseline.cjs');
 const EXPECTED_FILES = Object.freeze({
   'version.json': [655, 'f259d3545dd5f80d4310a859a8e016df9fe42cc19ef5612431eaf8b055e13e0e'],
   'manifest.json': [2259, 'fcd7ff131ae55315fa0b9323355ed0e7b69788ffe03841de025723cec16e8642'],
@@ -33,6 +33,9 @@ const CONTENT_MATCHES = Object.freeze([
   'https://darktide.gameslantern.com/weapon-blessing-traits*',
   'https://darktide.gameslantern.com/weapons/*'
 ]);
+
+let BASELINE_DIR;
+test.before(async () => { BASELINE_DIR = await ensureW15Baseline(); });
 
 let builderModule = null;
 if (fs.existsSync(BUILDER_PATH)) builderModule = require(BUILDER_PATH);
