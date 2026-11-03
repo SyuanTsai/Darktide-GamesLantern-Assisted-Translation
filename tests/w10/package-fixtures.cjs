@@ -133,6 +133,74 @@ function makeSyntheticPackage({ mutateManifest, mutateDomains, mutateFileBytes, 
   };
 }
 
+function makeSplitSyntheticPackage({ mutateSplitDocuments } = {}) {
+  const legacy = makeSyntheticPackage({ mutateDomains(kind, document) {
+    if (kind === 'weapons') {
+      const entityRef = { recordId: 'fixture:weapon:chainaxe', gameReleaseId: GAME_RELEASE_ID, kind: 'weapon' };
+      document.source.records.push({ ...entityRef, payload: { familyId: 'chainaxe_p1', markId: 'chainaxe_p1_m1' } });
+      document.web.presentations.push({ entityRef, locale: 'zh-TW', name: '鏈鋸斧',
+        nameOfficialLocaleRefs: [{ officialSourceId: 'fixture:weapon-name-en', sourceLocale: 'en' }] });
+      document.web.officialInputs.sources.push({ entityRef, officialSourceId: 'fixture:weapon-name-en',
+        sourceLocale: 'en', sourceText: 'Assault Chainaxe', resolvedText: 'Assault Chainaxe', segments: [] });
+    }
+    if (kind === 'blessings') {
+      const entityRef = { recordId: 'darktide:blessing:rev-it-up', gameReleaseId: GAME_RELEASE_ID, kind: 'blessing' };
+      document.source.records.push({ ...entityRef, payload: { variantRefs: [] } });
+      document.web.presentations.push({ entityRef, locale: 'zh-TW', name: '提速',
+        nameOfficialLocaleRefs: [{ officialSourceId: 'fixture:blessing-name-en', sourceLocale: 'en' }] });
+      document.web.officialInputs.sources.push({ entityRef, officialSourceId: 'fixture:blessing-name-en',
+        sourceLocale: 'en', sourceText: 'Rev It Up', resolvedText: 'Rev It Up', segments: [] });
+    }
+    return document;
+  } });
+  const splitDocuments = new Map();
+  for (const kind of ['skills', 'terms']) splitDocuments.set('domains/' + kind + '.json', legacy.domains.get(kind));
+  for (const [kind, filePath, sourceKind] of [
+    ['weapons-index', 'domains/weapons-index.json', 'weapons'],
+    ['weapon-family', 'domains/weapons/chainaxe_p1.json', 'weapons'],
+    ['blessings-index', 'domains/blessings-index.json', 'blessings'],
+    ['blessing', 'domains/blessings/rev-it-up.json', 'blessings']
+  ]) {
+    const document = structuredClone(legacy.domains.get(sourceKind));
+    document.kind = kind;
+    splitDocuments.set(filePath, document);
+  }
+  if (mutateSplitDocuments) mutateSplitDocuments(splitDocuments);
+  const dependencies = {
+    skills: ['domains/terms.json'], terms: [], 'weapons-index': [],
+    'weapon-family': ['domains/weapons-index.json'], 'blessings-index': [],
+    blessing: ['domains/blessings-index.json']
+  };
+  const manifest = structuredClone(legacy.manifest);
+  manifest.compatibility.requiredFeatures.push('split-weapon-blessing-domains-v1');
+  manifest.files = [...splitDocuments].map(([filePath, document]) => {
+    const bytes = Buffer.from(JSON.stringify(document), 'utf8');
+    return { kind: document.kind, path: filePath, sizeBytes: bytes.byteLength,
+      sha256: sha256(bytes), dependencies: dependencies[document.kind] };
+  }).sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  resealManifest(manifest);
+  const manifestBytes = Buffer.from(JSON.stringify(manifest), 'utf8');
+  const manifestSha256 = sha256(manifestBytes);
+  const version = makeVersionForManifest(manifest);
+  version.data_revision = manifest.dataRevision;
+  version.game_version = manifest.gameVersion;
+  version.game_releases.find((row) => row.game_version === manifest.gameVersion).manifest_sha256 = manifestSha256;
+  const versionBytes = Buffer.from(JSON.stringify(version), 'utf8');
+  const manifestPath = version.game_releases.find((row) => row.game_version === manifest.gameVersion).manifest_path;
+  const dataDirectory = manifestPath.slice(0, manifestPath.lastIndexOf('/') + 1);
+  const rawFiles = new Map([...splitDocuments].map(([filePath, document]) =>
+    [filePath, Buffer.from(JSON.stringify(document), 'utf8')]));
+  const resources = new Map([
+    ['/version.json', { bytes: versionBytes, contentType: 'application/json' }],
+    [manifestPath, { bytes: manifestBytes, contentType: 'application/json' }]
+  ]);
+  for (const [filePath, bytes] of rawFiles) {
+    resources.set(dataDirectory + filePath, { bytes, contentType: 'application/json' });
+  }
+  return { domains: splitDocuments, fetchImpl: makeFetch(resources), manifest, manifestBytes, manifestSha256,
+    rawFiles, resources, version, versionBytes, identity: legacy.identity };
+}
+
 function makeFetch(resources, overrides = {}) {
   const calls = [];
   const fetchImpl = async (input, init = {}) => {
@@ -185,6 +253,7 @@ module.exports = {
   makeDomain,
   makeFetch,
   makeResponse,
+  makeSplitSyntheticPackage,
   makeSyntheticPackage,
   sha256
 };

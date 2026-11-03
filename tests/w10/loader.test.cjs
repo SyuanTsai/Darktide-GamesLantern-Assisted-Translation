@@ -11,7 +11,76 @@ const {
   verifyStoredSnapshot
 } = require('../../extension/shared/loader.js');
 const { CORE_DOMAIN_KINDS, resealManifest } = require('./fixtures.cjs');
-const { makeFetch, makeResponse, makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
+const { makeFetch, makeResponse, makeSplitSyntheticPackage, makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
+
+test('UnitT09_DownloadsOnlyTheSplitFilesRequiredByEachExistingSupportedPage', async () => {
+  // Scenario: Given one split package requested from the existing skill, blessing-reader, and weapon routes.
+  // Purpose: Fetch each route's complete presentation closure without expanding the origin/main route surface.
+  const skills = makeSplitSyntheticPackage();
+  const skillsSnapshot = await downloadSnapshot({ fetchImpl: skills.fetchImpl, identity: skills.identity,
+    page: { pathname: '/build-editor' }, cryptoApi: webcrypto });
+  assert.deepEqual([...skillsSnapshot.files.keys()].sort(), ['domains/skills.json', 'domains/terms.json']);
+
+  const weaponDetail = makeSplitSyntheticPackage();
+  const detailSnapshot = await downloadSnapshot({ fetchImpl: weaponDetail.fetchImpl, identity: weaponDetail.identity,
+    page: { pathname: '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe' }, cryptoApi: webcrypto });
+  assert.deepEqual([...detailSnapshot.files.keys()].sort(), [
+    'domains/blessings-index.json', 'domains/weapons-index.json', 'domains/weapons/chainaxe_p1.json'
+  ]);
+  assert.equal(weaponDetail.fetchImpl.calls.some(({ url }) => url.endsWith('/domains/blessings/rev-it-up.json')), false);
+
+  const weaponFamily = makeSplitSyntheticPackage();
+  const familySnapshot = await downloadSnapshot({ fetchImpl: weaponFamily.fetchImpl, identity: weaponFamily.identity,
+    page: { pathname: '/weapons/assault-chainaxe' }, cryptoApi: webcrypto });
+  assert.deepEqual([...familySnapshot.files.keys()].sort(), [
+    'domains/blessings-index.json', 'domains/weapons-index.json', 'domains/weapons/chainaxe_p1.json'
+  ]);
+
+  const blessingList = makeSplitSyntheticPackage();
+  const blessingListSnapshot = await downloadSnapshot({ fetchImpl: blessingList.fetchImpl, identity: blessingList.identity,
+    page: { pathname: '/weapon-blessing-traits' }, cryptoApi: webcrypto });
+  assert.deepEqual([...blessingListSnapshot.files.keys()].sort(), [
+    'domains/blessings-index.json', 'domains/blessings/rev-it-up.json', 'domains/weapons-index.json'
+  ]);
+  for (const snapshot of [skillsSnapshot, detailSnapshot, familySnapshot, blessingListSnapshot]) {
+    const stored = await verifyStoredSnapshot({ versionBytes: snapshot.versionBytes,
+      manifestBytes: snapshot.manifestBytes, files: snapshot.files, identity: snapshot.identity,
+      cryptoApi: webcrypto });
+    assert.deepEqual([...stored.files.keys()], [...snapshot.files.keys()],
+      'stored split closure should remain valid without reconstructing a removed detail route');
+  }
+
+  for (const unsupportedPath of ['/weapons', '/weapon-blessing-traits/rev-it-up']) {
+    const unsupported = makeSplitSyntheticPackage();
+    await assert.rejects(() => downloadSnapshot({ fetchImpl: unsupported.fetchImpl, identity: unsupported.identity,
+      page: { pathname: unsupportedPath }, cryptoApi: webcrypto }), /pathname.*not supported|current page/i);
+  }
+
+  const wrongFamily = makeSplitSyntheticPackage({ mutateSplitDocuments(documents) {
+    documents.get('domains/weapons/chainaxe_p1.json').source.records
+      .find((record) => record.kind === 'weapon').payload.familyId = 'other_family';
+  } });
+  await assert.rejects(() => downloadSnapshot({ fetchImpl: wrongFamily.fetchImpl, identity: wrongFamily.identity,
+    page: { pathname: '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe' }, cryptoApi: webcrypto }),
+  /weapon-family.*path|familyId.*path|binding/i);
+
+  const wrongBlessing = makeSplitSyntheticPackage({ mutateSplitDocuments(documents) {
+    documents.get('domains/blessings/rev-it-up.json').source.records
+      .find((record) => record.kind === 'blessing').recordId = 'darktide:blessing:not-the-path';
+  } });
+  await assert.rejects(() => downloadSnapshot({ fetchImpl: wrongBlessing.fetchImpl, identity: wrongBlessing.identity,
+    page: { pathname: '/weapon-blessing-traits' }, cryptoApi: webcrypto }),
+  /blessing.*path|recordId.*path|binding/i);
+
+  const collidingBlessingSlug = makeSplitSyntheticPackage({ mutateSplitDocuments(documents) {
+    const index = documents.get('domains/blessings-index.json');
+    index.source.records.push({ ...structuredClone(index.source.records[0]),
+      recordId: 'darktide:blessing:rev+it+up' });
+  } });
+  await assert.rejects(() => downloadSnapshot({ fetchImpl: collidingBlessingSlug.fetchImpl,
+    identity: collidingBlessingSlug.identity, page: { pathname: '/weapon-blessing-traits' }, cryptoApi: webcrypto }),
+  /slug.*unique/i);
+});
 
  test('UnitT10_DownloadsAndValidatesACompleteIsolatedFourDomainPackage', async () => {
   // Scenario: Given an isolated synthetic index and a complete four-domain package with matching pins.
@@ -123,7 +192,7 @@ test('UnitT13_EnforcesDecodedStreamLimitsUtf8AndTreatsContentLengthAsAdvisory', 
   let chunksSent = 0;
   const overLimitStream = new ReadableStream({
     pull(controller) {
-      if (chunksSent >= 9) { controller.close(); return; }
+      if (chunksSent >= 17) { controller.close(); return; }
       chunksSent += 1;
       controller.enqueue(new Uint8Array(1024 * 1024));
     }
@@ -131,19 +200,19 @@ test('UnitT13_EnforcesDecodedStreamLimitsUtf8AndTreatsContentLengthAsAdvisory', 
   const oversized = makeFetch(oversizedFixture.resources, {
     [firstFileUrl]: { bodyStream: overLimitStream, contentType: 'application/json' }
   });
-  await assert.rejects(() => downloadSnapshot({ fetchImpl: oversized, identity: oversizedFixture.identity, cryptoApi: webcrypto }), /8 MiB.*limit/i);
+  await assert.rejects(() => downloadSnapshot({ fetchImpl: oversized, identity: oversizedFixture.identity, cryptoApi: webcrypto }), /16 MiB.*limit/i);
 
   const invalidUtf8 = makeSyntheticPackage({
     mutateFileBytes(filePath, bytes) { return filePath.endsWith('skills.json') ? Buffer.from([0xff, 0xfe]) : bytes; }
   });
   await assert.rejects(() => downloadSnapshot({ fetchImpl: invalidUtf8.fetchImpl, identity: invalidUtf8.identity, cryptoApi: webcrypto }), /UTF-8 decoding failed/i);
 
-  // Then declared aggregate size above 16 MiB is refused before any domain transfer.
+  // Then declared aggregate size above 24 MiB is refused before any domain transfer.
   const totalTooLarge = makeSyntheticPackage({ mutateManifest(manifest) {
-    manifest.files[0].sizeBytes = 8 * 1024 * 1024;
-    manifest.files[1].sizeBytes = 8 * 1024 * 1024;
+    manifest.files[0].sizeBytes = 12 * 1024 * 1024;
+    manifest.files[1].sizeBytes = 12 * 1024 * 1024;
   } });
-  await assert.rejects(() => downloadSnapshot({ fetchImpl: totalTooLarge.fetchImpl, identity: totalTooLarge.identity, cryptoApi: webcrypto }), /16 MiB total byte limit/i);
+  await assert.rejects(() => downloadSnapshot({ fetchImpl: totalTooLarge.fetchImpl, identity: totalTooLarge.identity, cryptoApi: webcrypto }), /24 MiB total byte limit/i);
   assert.equal(totalTooLarge.fetchImpl.calls.length, 2);
 });
 
@@ -274,6 +343,7 @@ test('UnitT18_IgnoresUnneededGameChangeFileWhileSelectingTheFourCoreDependencyCl
     sha256: sha256(extraBytes),
     dependencies: []
   });
+  fixture.manifest.files.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
   fixture.manifest.changeIndexPath = 'domains/game-changes.json';
   resealManifest(fixture.manifest);
   const manifestBytes = Buffer.from(JSON.stringify(fixture.manifest), 'utf8');

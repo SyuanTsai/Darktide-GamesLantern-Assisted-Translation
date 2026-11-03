@@ -112,13 +112,17 @@
   }
 
   function createW10Client({ runtime = globalThis.chrome && globalThis.chrome.runtime,
-    loader = loaderApi, documentSession = sessionApi } = {}) {
+    loader = loaderApi, documentSession = sessionApi, location = globalThis.location } = {}) {
     if (!runtime || typeof runtime.sendMessage !== 'function') throw new TypeError('chrome.runtime.sendMessage is unavailable');
     if (!loader || typeof loader.verifyStoredSnapshot !== 'function') throw new TypeError('W10 shared loader is unavailable');
     if (!documentSession || typeof documentSession.createDocumentSession !== 'function') {
       throw new TypeError('W10 document session is unavailable');
     }
     let session = null;
+
+    function currentPage() {
+      return location && typeof location.pathname === 'string' ? { pathname: location.pathname } : undefined;
+    }
 
     async function requestAndVerify(identity, options) {
       let response;
@@ -149,19 +153,23 @@
       try {
         const raw = result.snapshot;
         if (!raw || typeof raw !== 'object' || Object.keys(raw).sort().join(',') !== 'files,manifestBytes,versionBytes'
-          || !Array.isArray(raw.files) || raw.files.length > 16) throw new Error('worker snapshot row is malformed');
+          || !Array.isArray(raw.files) || raw.files.length > 4096) throw new Error('worker snapshot row is malformed');
         const files = new Map();
+        let encodedFileBytes = 0;
         for (const row of raw.files) {
           if (!Array.isArray(row) || row.length !== 2 || typeof row[0] !== 'string' || files.has(row[0])) {
             throw new Error('worker file row is malformed');
           }
+          encodedFileBytes += row[1].length;
+          if (encodedFileBytes > 32 * 1024 * 1024) throw new Error('worker snapshot exceeds the message byte limit');
           files.set(row[0], bytesFromBase64(row[1]));
         }
         const snapshot = await loader.verifyStoredSnapshot({
           versionBytes: bytesFromBase64(raw.versionBytes),
           manifestBytes: bytesFromBase64(raw.manifestBytes),
           files,
-          identity
+          identity,
+          page: currentPage()
         });
         const verified = { status: 'ready', source: result.source, snapshot, identity,
           updateStatus: result.updateStatus || null };

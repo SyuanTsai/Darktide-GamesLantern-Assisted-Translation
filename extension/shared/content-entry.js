@@ -212,7 +212,7 @@
     const evidenceProvider = createNativeEvidenceProvider({ document, adapter });
     const registry = pageRoot.W11TestProofRegistry;
     const proofs = registry && Array.isArray(registry.proofs) ? registry.proofs : [];
-    const rawClient = clientApi.createW10Client({ runtime: pageRoot.chrome.runtime });
+    const rawClient = clientApi.createW10Client({ runtime: pageRoot.chrome.runtime, location: pageRoot.location });
     const testProofMode = !!(registry && Array.isArray(registry.proofs));
     const productionPin = pageRoot.W16ProductionDatasetPin;
     const identityResolver = !testProofMode && productionPin && productionDatasetApi

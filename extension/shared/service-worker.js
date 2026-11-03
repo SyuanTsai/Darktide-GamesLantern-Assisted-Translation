@@ -96,6 +96,11 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     return validGamePageSender(sender);
   }
 
+  function pageForSender(sender) {
+    if (!validGamePageSender(sender)) return undefined;
+    return { pathname: new URL(sender.url).pathname };
+  }
+
   function bytesToBase64(value) {
     const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
     const encoded = [];
@@ -168,7 +173,8 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
       }
       Promise.resolve(coordinator.getSnapshot(identity, {
         active: message.active === undefined ? true : message.active,
-        manual: message.manual === true
+        manual: message.manual === true,
+        ...(pageForSender(sender) === undefined ? {} : { page: pageForSender(sender) })
       })).then((result) => sendResponse({ ok: true, result: serializeResult(result) }), (error) => {
         sendResponse(errorResponse(error && error.code ? String(error.code) : 'UPDATE_FAILED'));
       });

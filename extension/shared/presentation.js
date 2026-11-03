@@ -44,12 +44,100 @@
     return item && typeof item.text === 'string' ? item.text : '';
   }
 
+  function logicalKind(kind) {
+    if (kind === 'weapons-index' || kind === 'weapon-family') return 'weapons';
+    if (kind === 'blessings-index' || kind === 'blessing') return 'blessings';
+    return kind;
+  }
+
+  function mergeRows(rows, identity) {
+    const output = [];
+    const positions = new Map();
+    for (const row of rows) {
+      const key = identity(row) || JSON.stringify(row);
+      if (positions.has(key)) output[positions.get(key)] = row;
+      else {
+        positions.set(key, output.length);
+        output.push(row);
+      }
+    }
+    return output;
+  }
+
+  function typedIdentity(row) {
+    return row && typeof row.gameReleaseId === 'string' && typeof row.recordId === 'string'
+      ? row.gameReleaseId + '\u0000' + String(row.kind || '') + '\u0000' + row.recordId : null;
+  }
+
+  function entityIdentity(row) {
+    const ref = row?.entityRef;
+    return typedIdentity(ref) ? typedIdentity(ref) + '\u0000' + String(row.locale || '') : null;
+  }
+
+  function rowIdentity(key, row) {
+    if (key === 'gameReleases') return row?.gameReleaseId || null;
+    if (key === 'sourceSnapshots') return row?.gameReleaseId && row?.snapshot?.snapshotId
+      ? row.gameReleaseId + '\u0000' + row.snapshot.snapshotId : null;
+    if (key === 'sourceRefs') return row?.gameReleaseId && row?.sourceId
+      ? row.gameReleaseId + '\u0000' + row.sourceId : null;
+    if (key === 'records' || key === 'tombstones') return typedIdentity(row);
+    if (key === 'presentations') return entityIdentity(row);
+    if (key === 'termLocalizations') return typedIdentity(row?.termRef)
+      ? typedIdentity(row.termRef) + '\u0000' + String(row.contextKey || '') + '\u0000' + String(row.locale || '') : null;
+    if (key === 'termRules') return typeof row?.ruleId === 'string' ? row.ruleId : null;
+    return null;
+  }
+
+  function mergeDomainGroup(group, kind, gameReleaseId) {
+    if (group.length === 1 && group[0].kind === kind) return group[0];
+    const first = group[0];
+    if (!first || group.some((domain) => !domain || domain.gameReleaseId !== gameReleaseId
+      || !domain.source || !domain.web || domain.source.repository !== first.source.repository)) return null;
+    const sourceArrays = ['gameReleases', 'sourceSnapshots', 'sourceRefs', 'records', 'tombstones', 'reviewReceipts'];
+    const webArrays = ['presentations', 'termLocalizations', 'termRules', 'announcements', 'gameChanges',
+      'officialTextChanges', 'reviewTargets', 'reviewReceipts'];
+    const source = { repository: first.source.repository };
+    for (const key of sourceArrays) {
+      source[key] = mergeRows(group.flatMap((domain) => Array.isArray(domain.source[key]) ? domain.source[key] : []),
+        (row) => rowIdentity(key, row));
+    }
+    const web = {};
+    for (const key of webArrays) {
+      const present = group.some((domain) => Array.isArray(domain.web[key]));
+      if (present) web[key] = mergeRows(group.flatMap((domain) => Array.isArray(domain.web[key]) ? domain.web[key] : []),
+        (row) => rowIdentity(key, row));
+    }
+    web.officialInputs = { sources: mergeRows(group.flatMap((domain) =>
+      Array.isArray(domain.web.officialInputs?.sources) ? domain.web.officialInputs.sources : []),
+    (row) => typeof row?.officialSourceId === 'string' ? row.officialSourceId : null) };
+    return { schemaVersion: first.schemaVersion, kind, gameReleaseId, source, web };
+  }
+
+  function logicalDomains(snapshot) {
+    if (!snapshot || !snapshot.identity || !(snapshot.domains instanceof Map)) return null;
+    const gameReleaseId = snapshot.identity.gameReleaseId;
+    const groups = new Map();
+    for (const domain of snapshot.domains.values()) {
+      if (!domain || domain.gameReleaseId !== gameReleaseId || typeof domain.kind !== 'string') continue;
+      const kind = logicalKind(domain.kind);
+      if (!groups.has(kind)) groups.set(kind, []);
+      groups.get(kind).push(domain);
+    }
+    const domains = [];
+    for (const [kind, group] of groups) {
+      const merged = mergeDomainGroup(group, kind, gameReleaseId);
+      if (!merged) return null;
+      domains.push(merged);
+    }
+    return { gameReleaseId, domains };
+  }
+
   function buildSkillViewModels(snapshot) {
     if (!snapshot || !snapshot.identity || !(snapshot.domains instanceof Map)
       || !sharedViewApi || typeof sharedViewApi.createSharedViewModel !== 'function') return [];
-    const gameReleaseId = snapshot.identity.gameReleaseId;
-    const domains = [...snapshot.domains.values()].filter((domain) => domain
-      && domain.gameReleaseId === gameReleaseId);
+    const logical = logicalDomains(snapshot);
+    if (!logical) return [];
+    const { gameReleaseId, domains } = logical;
     const skillsDomains = domains.filter((domain) => domain.kind === 'skills');
     if (skillsDomains.length !== 1) return [];
     const skillsDomain = skillsDomains[0];
@@ -106,12 +194,7 @@
   }
 
   function verifiedDomains(snapshot) {
-    if (!snapshot || !snapshot.identity || !(snapshot.domains instanceof Map)) return null;
-    const gameReleaseId = snapshot.identity.gameReleaseId;
-    const domains = [...snapshot.domains.values()].filter((domain) => domain
-      && domain.gameReleaseId === gameReleaseId);
-    if (domains.length !== 4 || new Set(domains.map((domain) => domain.kind)).size !== 4) return null;
-    return { gameReleaseId, domains };
+    return logicalDomains(snapshot);
   }
 
   function termRows(view) {

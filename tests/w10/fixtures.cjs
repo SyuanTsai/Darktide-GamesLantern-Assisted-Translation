@@ -53,7 +53,7 @@ function resealManifest(manifest) {
 }
 
 function makeManifest() {
-  return resealManifest({
+  const manifest = {
     schemaVersion: '2.0.0',
     gameReleaseId: 'fixture:1.2.3',
     gameVersion: '1.2.3',
@@ -82,7 +82,27 @@ function makeManifest() {
         dependencies: [] }
     ],
     changeIndexPath: null
-  });
+  };
+  manifest.files.sort((left, right) => compareUtf8(left.path, right.path));
+  return resealManifest(manifest);
+}
+
+function makeSplitManifest() {
+  const manifest = makeManifest();
+  manifest.compatibility.requiredFeatures.push('split-weapon-blessing-domains-v1');
+  manifest.files = manifest.files.filter((file) => !['weapons', 'blessings'].includes(file.kind));
+  manifest.files.push(
+    { kind: 'weapons-index', path: 'domains/weapons-index.json', sizeBytes: 14,
+      sha256: 'e'.repeat(64), dependencies: [] },
+    { kind: 'weapon-family', path: 'domains/weapons/chainaxe_p1.json', sizeBytes: 15,
+      sha256: 'f'.repeat(64), dependencies: ['domains/weapons-index.json'] },
+    { kind: 'blessings-index', path: 'domains/blessings-index.json', sizeBytes: 16,
+      sha256: '6'.repeat(64), dependencies: [] },
+    { kind: 'blessing', path: 'domains/blessings/rev_it_up.json', sizeBytes: 17,
+      sha256: '7'.repeat(64), dependencies: ['domains/blessings-index.json'] }
+  );
+  manifest.files.sort((left, right) => compareUtf8(left.path, right.path));
+  return resealManifest(manifest);
 }
 
 function release(gameVersion, revision, dataRevision) {
@@ -157,6 +177,7 @@ function readApprovedCandidateManifest() {
 module.exports = {
   CORE_DOMAIN_KINDS,
   makeManifest,
+  makeSplitManifest,
   makeSamePatchRollbackIndexes,
   makeVersion,
   makeVersionForManifest,

@@ -58,7 +58,8 @@
     if (!loaderApi || typeof loaderApi.fetchVersionIndex !== 'function'
       || typeof loaderApi.downloadSnapshotFromVersion !== 'function'
       || typeof loaderApi.verifyStoredSnapshot !== 'function'
-      || typeof loaderApi.sameReleasePointer !== 'function') {
+      || typeof loaderApi.sameReleasePointer !== 'function'
+      || typeof loaderApi.snapshotSupportsPage !== 'function') {
       fail('W10 shared loader version API is required', 'DEPENDENCY_UNAVAILABLE');
     }
     if (typeof fetchImpl !== 'function' || typeof clock !== 'function' || typeof baselineRawProvider !== 'function') {
@@ -72,16 +73,16 @@
 
     const inFlight = new Map();
 
-    async function readCache(identity) {
+    async function readCache(identity, page) {
       try {
         const cached = await store.readSnapshot(identity);
-        return isVerifiedSnapshot(cached) ? cached : null;
+        return isVerifiedSnapshot(cached) && loaderApi.snapshotSupportsPage(cached.snapshot, page) ? cached : null;
       } catch (_) {
         return null;
       }
     }
 
-    async function loadBaseline(identity) {
+    async function loadBaseline(identity, page) {
       try {
         const raw = await baselineRawProvider(identity);
         if (!raw) return null;
@@ -90,6 +91,7 @@
           manifestBytes: raw.manifestBytes,
           files: raw.files,
           identity,
+          page,
           cryptoApi
         });
         return { source: 'baseline', snapshot };
@@ -98,8 +100,8 @@
       }
     }
 
-    async function resolveResult(identity, updateStatus, error) {
-      const cached = await readCache(identity);
+    async function resolveResult(identity, page, updateStatus, error) {
+      const cached = await readCache(identity, page);
       if (cached) {
         return Object.freeze({
           status: 'ready',
@@ -110,7 +112,7 @@
           error: error || null
         });
       }
-      const baseline = await loadBaseline(identity);
+      const baseline = await loadBaseline(identity, page);
       if (baseline) {
         return Object.freeze({
           status: 'ready', source: 'baseline', snapshot: baseline.snapshot, identity,
@@ -121,20 +123,21 @@
         updateStatus, error: error || null });
     }
 
-    async function runCheck(identity, schedule, now) {
+    async function runCheck(identity, page, schedule, now) {
       const localIdentity = releaseIdentity(identity);
       const checkToken = await store.beginCheck(localIdentity, { attemptAt: now });
       try {
         const index = await loaderApi.fetchVersionIndex({ fetchImpl, identity: localIdentity, cryptoApi });
         const before = await store.readSnapshot(localIdentity).catch(() => null);
-        if (isVerifiedSnapshot(before) && loaderApi.sameReleasePointer(before.snapshot.release, index.release)) {
+        if (isVerifiedSnapshot(before) && loaderApi.sameReleasePointer(before.snapshot.release, index.release)
+          && loaderApi.snapshotSupportsPage(before.snapshot, page)) {
           const recorded = await store.recordCheckSuccess({
             checkToken, identity: localIdentity, successAt: clock()
           });
           return { status: recorded ? 'unchanged' : 'stale' };
         }
         const downloaded = await loaderApi.downloadSnapshotFromVersion({
-          fetchImpl, identity: localIdentity, versionBytes: index.versionBytes, cryptoApi
+          fetchImpl, identity: localIdentity, versionBytes: index.versionBytes, page, cryptoApi
         });
         const completedAt = clock();
         const activated = await store.commitSnapshot({
@@ -158,7 +161,7 @@
       }
     }
 
-    async function runScheduledCheck(identity, isManual) {
+    async function runScheduledCheck(identity, page, isManual) {
       const now = clock();
       let schedule;
       try { schedule = await store.getUpdateState(releaseIdentity(identity)); }
@@ -166,22 +169,23 @@
       const initialOrOldSuccess = schedule.lastFailureAt === null
         && (schedule.lastSuccessAt === null || now - schedule.lastSuccessAt >= successIntervalMs);
       const retryDue = schedule.failureCount > 0 && (schedule.nextRetryAt === null || now >= schedule.nextRetryAt);
-      if (!isManual() && !initialOrOldSuccess && !retryDue) return { status: 'not-due' };
-      try { return await runCheck(identity, schedule, now); }
+      const scopeMissing = !(await readCache(identity, page));
+      if (!isManual() && !initialOrOldSuccess && !retryDue && !scopeMissing) return { status: 'not-due' };
+      try { return await runCheck(identity, page, schedule, now); }
       catch (error) { return { status: 'storage-unavailable', error }; }
     }
 
-    async function getSnapshot(trustedIdentity, { active = true, manual = false } = {}) {
+    async function getSnapshot(trustedIdentity, { active = true, manual = false, page } = {}) {
       const identity = normalizeIdentity(trustedIdentity);
       if (active !== true && active !== false) fail('activity state must be boolean', 'INVALID_REQUEST');
       if (manual !== true && manual !== false) fail('manual state must be boolean', 'INVALID_REQUEST');
-      if (!active) return resolveResult(identity, 'inactive', null);
+      if (!active) return resolveResult(identity, page, 'inactive', null);
 
-      const key = scopeKey(identity);
+      const key = scopeKey(identity) + '\u0000' + String(page?.pathname || '');
       let entry = inFlight.get(key);
       if (!entry) {
         entry = { manual: manual === true, promise: null };
-        entry.promise = runScheduledCheck(identity, () => entry.manual);
+        entry.promise = runScheduledCheck(identity, page, () => entry.manual);
         inFlight.set(key, entry);
         entry.promise.finally(() => {
           if (inFlight.get(key) === entry) inFlight.delete(key);
@@ -193,7 +197,7 @@
       let update;
       try { update = await entry.promise; }
       catch (error) { update = { status: 'failed', error }; }
-      return resolveResult(identity, update.status, update.error || null);
+      return resolveResult(identity, page, update.status, update.error || null);
     }
 
     function inFlightCount() { return inFlight.size; }

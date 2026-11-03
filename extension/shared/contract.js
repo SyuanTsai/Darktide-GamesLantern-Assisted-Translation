@@ -7,13 +7,15 @@
 
   const DOMAIN_KINDS = Object.freeze([
     'skills', 'blessings', 'weapons', 'terms', 'catalog', 'curios', 'perks',
-    'classifications', 'announcements', 'game-changes'
+    'classifications', 'announcements', 'game-changes', 'weapons-index', 'weapon-family',
+    'blessings-index', 'blessing'
   ]);
   const CORE_DOMAIN_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
   const REQUIRED_FEATURES = Object.freeze([
     'official-errata-details-v1',
     'official-native-localizations-v1',
-    'blessing-tier-presentations-v1'
+    'blessing-tier-presentations-v1',
+    'split-weapon-blessing-domains-v1'
   ]);
   const SOURCE_REPOSITORY = 'https://github.com/SyuanTsai/DarkTide-Source-Data';
 
@@ -222,6 +224,57 @@
     for (const filePath of filesByPath.keys()) visit(filePath);
   }
 
+  function manifestFormat(manifest) {
+    const kinds = new Set(Array.isArray(manifest?.files) ? manifest.files.map((file) => file?.kind) : []);
+    const hasLegacy = kinds.has('weapons') || kinds.has('blessings');
+    const hasSplit = ['weapons-index', 'weapon-family', 'blessings-index', 'blessing']
+      .some((kind) => kinds.has(kind));
+    if (hasLegacy && hasSplit) fail('manifest must not mix legacy and split weapon/blessing domains');
+    return hasSplit ? 'split' : 'legacy';
+  }
+
+  function validateWeaponBlessingLayout(manifest, filesByPath) {
+    const format = manifestFormat(manifest);
+    const splitFeature = manifest.compatibility.requiredFeatures.includes('split-weapon-blessing-domains-v1');
+    if ((format === 'split') !== splitFeature) {
+      fail('split weapon/blessing domains and the split-weapon-blessing-domains-v1 feature must be declared together');
+    }
+    const count = (kind) => manifest.files.filter((file) => file.kind === kind).length;
+    if (count('skills') !== 1 || count('terms') !== 1) {
+      fail('manifest must contain exactly one skills file and one terms file');
+    }
+    if (format === 'legacy') {
+      if (count('weapons') !== 1 || count('blessings') !== 1) {
+        fail('legacy manifest must contain exactly one weapons file and one blessings file');
+      }
+      return format;
+    }
+    if (count('weapons-index') !== 1 || count('blessings-index') !== 1
+      || count('weapons') !== 0 || count('blessings') !== 0) {
+      fail('split manifest must contain exactly one weapons-index and one blessings-index without legacy domains');
+    }
+    const weaponsIndex = filesByPath.get('domains/weapons-index.json');
+    const blessingsIndex = filesByPath.get('domains/blessings-index.json');
+    if (!weaponsIndex || weaponsIndex.kind !== 'weapons-index' || weaponsIndex.dependencies.length !== 0
+      || !blessingsIndex || blessingsIndex.kind !== 'blessings-index' || blessingsIndex.dependencies.length !== 0) {
+      fail('split index paths and dependencies are not canonical');
+    }
+    for (const file of manifest.files) {
+      if (file.kind === 'weapon-family') {
+        if (!/^domains\/weapons\/[A-Za-z0-9._-]+\.json$/.test(file.path)
+          || file.dependencies.length !== 1 || file.dependencies[0] !== 'domains/weapons-index.json') {
+          fail('weapon-family path or dependency is not canonical');
+        }
+      } else if (file.kind === 'blessing') {
+        if (!/^domains\/blessings\/[A-Za-z0-9._-]+\.json$/.test(file.path)
+          || file.dependencies.length !== 1 || file.dependencies[0] !== 'domains/blessings-index.json') {
+          fail('blessing path or dependency is not canonical');
+        }
+      }
+    }
+    return format;
+  }
+
   async function validateManifest(manifest, { cryptoApi = globalThis.crypto } = {}) {
     requireExactKeys(manifest, [
       'schemaVersion', 'gameReleaseId', 'gameVersion', 'contentVersion', 'dataRevision',
@@ -282,6 +335,7 @@
     }
     const filesByPath = new Map();
     const lowerPaths = new Set();
+    let previousPath = null;
     for (let index = 0; index < manifest.files.length; index += 1) {
       const file = manifest.files[index];
       const label = 'manifest.files[' + index + ']';
@@ -302,10 +356,15 @@
       const lowerPath = file.path.toLowerCase();
       if (filesByPath.has(file.path)) fail('duplicate file path: ' + file.path);
       if (lowerPaths.has(lowerPath)) fail('file paths have a case-insensitive collision: ' + file.path);
+      if (previousPath !== null && compareUtf8(previousPath, file.path) >= 0) {
+        fail('manifest.files must be sorted by path');
+      }
       filesByPath.set(file.path, file);
       lowerPaths.add(lowerPath);
+      previousPath = file.path;
     }
 
+    validateWeaponBlessingLayout(manifest, filesByPath);
     validateDependencyGraph(filesByPath);
     if (manifest.changeIndexPath !== null) {
       validateRelativeJsonPath(manifest.changeIndexPath, 'manifest.changeIndexPath');
@@ -391,6 +450,7 @@
     REQUIRED_FEATURES,
     SOURCE_REPOSITORY,
     matchReleaseIdentity,
+    manifestFormat,
     selectConsumerFiles,
     selectGameRelease,
     validateManifest,

@@ -8,7 +8,9 @@
   const DOMAIN_SCHEMA = 'w08-shared-domain/1.0.0';
   const SOURCE_REPOSITORY = 'https://github.com/SyuanTsai/DarkTide-Source-Data';
   const CORE_DOMAIN_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
-  const CORE_DOMAIN_SET = new Set(CORE_DOMAIN_KINDS);
+  const SPLIT_DOMAIN_KINDS = Object.freeze(['weapons-index', 'weapon-family', 'blessings-index', 'blessing']);
+  const SUPPORTED_DOMAIN_SET = new Set([...CORE_DOMAIN_KINDS, ...SPLIT_DOMAIN_KINDS]);
+  const INDEX_DOMAIN_SET = new Set(['weapons-index', 'blessings-index']);
   const RELEASE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
   const GAME_VERSION_PATTERN = /^\d+(?:\.\d+){1,3}$/;
   const SNAPSHOT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
@@ -160,7 +162,7 @@
     requireExactKeys(document, ['schemaVersion', 'kind', 'gameReleaseId', 'source', 'web'], 'domain');
     requireString(kind, 'expected domain kind');
     requireString(gameReleaseId, 'expected gameReleaseId');
-    if (!CORE_DOMAIN_SET.has(kind)) fail('domain kind is not a supported W10 core kind: ' + kind);
+    if (!SUPPORTED_DOMAIN_SET.has(kind)) fail('domain kind is not a supported W10 shared kind: ' + kind);
     if (document.schemaVersion !== DOMAIN_SCHEMA || document.kind !== kind || document.gameReleaseId !== gameReleaseId) {
       fail('domain file identity does not match the manifest');
     }
@@ -201,6 +203,7 @@
     for (const record of records.values()) {
       for (const ref of collectTypedRecordPointers(record)) {
         const target = records.get(sourceRecordKey(ref));
+        if (!target && INDEX_DOMAIN_SET.has(kind)) continue;
         if (!target) fail('domain Source typed closure is incomplete for ' + ref.recordId);
         if (ref.kind && ref.kind !== target.kind) fail('domain Source reference kind mismatch for ' + ref.recordId);
       }
@@ -320,17 +323,16 @@
     if (identity.gameVersion !== manifest.gameVersion || identity.gameReleaseId !== manifest.gameReleaseId) {
       fail('local game identity does not match the manifest game release');
     }
-    if (domains.size !== CORE_DOMAIN_KINDS.length || CORE_DOMAIN_KINDS.some((kind) => !domains.has(kind))) {
-      fail('domain package must contain exactly the four W10 core kinds');
-    }
+    if (domains.size === 0) fail('domain package must contain at least one validated domain');
 
     const releases = new Map();
     const releaseByVersion = new Map();
     const snapshots = new Map();
     const snapshotOwners = new Map();
     const pendingSnapshotRefs = [];
-    for (const kind of CORE_DOMAIN_KINDS) {
-      const document = validateDomain(domains.get(kind), { kind, gameReleaseId: manifest.gameReleaseId });
+    for (const documentValue of domains.values()) {
+      if (!documentValue || typeof documentValue.kind !== 'string') fail('domain package contains an invalid document');
+      const document = validateDomain(documentValue, { kind: documentValue.kind, gameReleaseId: manifest.gameReleaseId });
       for (const row of document.source.gameReleases) {
         const existing = releases.get(row.gameReleaseId);
         if (existing && existing.gameVersion !== row.gameVersion) fail('conflicting Source gameVersion for release ' + row.gameReleaseId);

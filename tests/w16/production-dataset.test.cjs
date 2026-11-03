@@ -12,6 +12,7 @@ const { serializeNativeSnapshot } = require('../../extension/shared/content-entr
 const { createProductionDatasetResolver } = require('../../extension/shared/production-dataset.js');
 
 const { ensureW15Baseline } = require('../../scripts/release/release-baseline.cjs');
+const { deriveRouteSplitSnapshot } = require('./split-fixture.cjs');
 
 let BASELINE_DIR;
 test.before(async () => { BASELINE_DIR = await ensureW15Baseline(); });
@@ -145,4 +146,62 @@ test('UnitT40_ReaderSnapshotAccessRejectsWrongReleaseAndLoaderFailure', async ()
   const failedResolver = createProductionDatasetResolver({ pin: GAME_LINE_PIN,
     loadSnapshot: async () => { throw new Error('fixture loader failure'); } });
   assert.equal(await failedResolver.loadPinnedSnapshotForReading(), null);
+});
+
+test('UnitT50_EachSupportedRouteSplitClosurePreservesRenderedModelAndNativeIdentityParity', async (t) => {
+  // Scenario: Given every origin/main-supported route and the pinned legacy W15 fixture split by v1 rules.
+  // Purpose: Prove each selectively loaded route closure renders and identifies exactly like the legacy package.
+  const { snapshot } = await readBaselineSnapshot();
+  const legacyResolver = resolverFor(snapshot);
+  const observation = {
+    structure: 'gameslantern-weapon-detail-v1',
+    href: 'https://darktide.gameslantern.com/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
+    title: '\u00a0Orestes Mk IV Assault Chainaxe\u00a0', mirrorTitle: '\u00a0Orestes Mk IV Assault Chainaxe\u00a0',
+    imageAlt: 'Header Image',
+    imageSrc: 'https://darktide.gameslantern.com/storage/sites/darktide/weapons/VPoQRZKAlr4zEvg4uroy4gJ3z6IwTwyKS0MFKd4E.png'
+  };
+  const weaponEvidence = serializeNativeSnapshot({
+    pathname: '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
+    patch: { status: 'absent' }, skills: [], weapons: [observation]
+  });
+  const routes = [
+    { pathname: '/build-editor', view: 'skills' },
+    { pathname: '/abilities', view: 'skills' },
+    { pathname: '/abilities/brain-rupture', view: 'skills' },
+    { pathname: '/weapon-blessing-traits', view: 'blessings' },
+    { pathname: '/weapons/assault-chainaxe', view: 'weapons', familyId: 'chainaxe_p1' },
+    { pathname: '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe',
+      view: 'weapons', familyId: 'chainaxe_p1' }
+  ];
+  for (const route of routes) {
+    const { snapshot: split, stats } = deriveRouteSplitSnapshot(snapshot, route.pathname,
+      { familyId: route.familyId });
+    assert.ok(stats.maxFileBytes <= 16 * 1024 * 1024, route.pathname + ' exceeds the per-file limit');
+    assert.ok(stats.totalBytes <= 24 * 1024 * 1024, route.pathname + ' exceeds the per-page limit');
+    if (route.view === 'skills') {
+      assert.deepEqual(presentation.buildSkillViewModels(split), presentation.buildSkillViewModels(snapshot),
+        route.pathname + ' skill models differ');
+    } else if (route.view === 'blessings') {
+      assert.deepEqual(presentation.buildBlessingViewModels(split, {}),
+        presentation.buildBlessingViewModels(snapshot, {}), route.pathname + ' blessing models differ');
+    } else {
+      const selected = (candidate) => presentation.buildWeaponFamilyViewModels(candidate)
+        .filter((family) => family.familySlug === 'assault-chainaxe');
+      assert.deepEqual(selected(split), selected(snapshot), route.pathname + ' weapon family differs');
+    }
+    const splitResolver = resolverFor(split);
+    let evidence;
+    if (route.view === 'skills') {
+      evidence = serializeNativeSnapshot({ pathname: route.pathname, patch: { status: 'absent' },
+        skills: [{ structure: route.pathname.startsWith('/abilities/')
+          ? 'gameslantern-ability-detail-v1' : 'gameslantern-ability-card-v1',
+        name: 'Brain Rupture',
+        description: 'Charge up your Psychic Power and release it to deal immense Damage to a Single Enemy.\n\nThis is an augmented version of Brain Burst dealing +50% Damage.' }], weapons: [] });
+    } else if (route.pathname.split('/').filter(Boolean).length === 3) evidence = weaponEvidence;
+    else evidence = serializeNativeSnapshot({ pathname: route.pathname,
+      patch: { status: 'absent' }, skills: [], weapons: [] });
+    assert.deepEqual(await splitResolver.resolve(evidence), await legacyResolver.resolve(evidence),
+      route.pathname + ' native identity differs');
+    t.diagnostic(JSON.stringify(stats));
+  }
 });
