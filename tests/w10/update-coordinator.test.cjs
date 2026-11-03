@@ -9,7 +9,8 @@ const vm = require('node:vm');
 const { webcrypto } = require('node:crypto');
 const { createUpdateCoordinator, DAY_MS } = require('../../extension/shared/update-coordinator.js');
 const { verifyStoredSnapshot } = require('../../extension/shared/loader.js');
-const { ALTERNATE_SNAPSHOT_ID, makeFetch, makeResponse, makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
+const { ALTERNATE_SNAPSHOT_ID, makeFetch, makeResponse, makeSplitSyntheticPackage,
+  makeSyntheticPackage, sha256 } = require('./package-fixtures.cjs');
 
 const ORIGIN = 'https://darktide.tw-syuan.com';
 
@@ -122,6 +123,27 @@ class FakeSnapshotStore {
 function coordinator(store, fetchImpl, clock, options = {}) {
   return createUpdateCoordinator({ store, fetchImpl, clock, cryptoApi: webcrypto, ...options });
 }
+
+test('UnitT09_ReplacesAStoredSplitScopeWhenTheCurrentPageNeedsAnotherClosure', async () => {
+  // Scenario: Given one split release visited first on a weapon detail and then in the build editor.
+  // Purpose: Reuse an exact page closure but replace a mismatched closure even when the release pointer is unchanged.
+  const pack = makeSplitSyntheticPackage();
+  const store = new FakeSnapshotStore();
+  const updater = coordinator(store, pack.fetchImpl, () => 1000);
+  const detailPage = { pathname: '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe' };
+  const detail = await updater.getSnapshot(pack.identity, { page: detailPage });
+  assert.deepEqual([...detail.snapshot.files.keys()].sort(), [
+    'domains/blessings-index.json', 'domains/weapons-index.json', 'domains/weapons/chainaxe_p1.json'
+  ]);
+  const afterDetail = pack.fetchImpl.calls.length;
+  assert.equal((await updater.getSnapshot(pack.identity, { page: detailPage })).source, 'active');
+  assert.equal(pack.fetchImpl.calls.length, afterDetail, 'the exact cached page closure should be reused');
+
+  const editor = await updater.getSnapshot(pack.identity, { page: { pathname: '/build-editor' } });
+  assert.deepEqual([...editor.snapshot.files.keys()].sort(), ['domains/skills.json', 'domains/terms.json']);
+  assert.equal(pack.fetchImpl.calls.length, afterDetail + 4,
+    'a different split scope fetches version, manifest, skills, and terms');
+});
 
 test('UnitT10_UnchangedPointerUsesOneVersionRequestAndVerifiedCache', async () => {
   // Scenario: Given a verified active package and the same complete release pointer.

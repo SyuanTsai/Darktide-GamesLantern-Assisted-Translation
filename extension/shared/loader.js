@@ -12,11 +12,16 @@
   const VERSION_URL = ORIGIN + '/version.json';
   const CORE_DOMAIN_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
   const CORE_DOMAIN_SET = new Set(CORE_DOMAIN_KINDS);
+  const SPLIT_DOMAIN_KINDS = Object.freeze([
+    'skills', 'terms', 'weapons-index', 'weapon-family', 'blessings-index', 'blessing'
+  ]);
+  const MAX_DOMAIN_BYTES = 16 * 1024 * 1024;
+  const MAX_PACKAGE_BYTES = 24 * 1024 * 1024;
   const LIMITS = Object.freeze({
     versionBytes: 64 * 1024,
     manifestBytes: 256 * 1024,
-    fileBytes: 8 * 1024 * 1024,
-    snapshotBytes: 16 * 1024 * 1024,
+    fileBytes: MAX_DOMAIN_BYTES,
+    snapshotBytes: MAX_PACKAGE_BYTES,
     timeoutMs: 30000
   });
 
@@ -164,9 +169,167 @@
       fail('W10 core dependency closure must contain exactly one file for each core domain');
     }
     for (const row of selectedFiles) {
-      if (row.sizeBytes > LIMITS.fileBytes) fail('domain file exceeds the 8 MiB file limit: ' + row.path);
+      if (row.sizeBytes > LIMITS.fileBytes) fail('domain file exceeds the 16 MiB file limit: ' + row.path);
     }
     return selectedFiles;
+  }
+
+  function normalizePage(page) {
+    if (!page || typeof page !== 'object' || Array.isArray(page)
+      || Object.keys(page).some((key) => key !== 'pathname') || typeof page.pathname !== 'string') {
+      fail('current page pathname is required for a split package');
+    }
+    const pathname = page.pathname.replace(/\/$/, '') || '/';
+    if (!/^\/(?:build-editor|abilities(?:\/[a-z0-9-]+)?|weapon-blessing-traits|weapons(?:\/[a-z0-9-]+){1,2})$/i.test(pathname)) {
+      fail('current page pathname is not supported');
+    }
+    return pathname;
+  }
+
+  function slugify(value) {
+    return typeof value === 'string'
+      ? value.replace(/\s+/g, ' ').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') : '';
+  }
+
+  function familyIdForPath(index, familySlug) {
+    if (!index) return null;
+    const records = Array.isArray(index.source?.records) ? index.source.records : [];
+    const presentations = Array.isArray(index.web?.presentations) ? index.web.presentations : [];
+    const sources = Array.isArray(index.web?.officialInputs?.sources) ? index.web.officialInputs.sources : [];
+    const matches = new Set();
+    for (const record of records) {
+      if (record?.kind !== 'weapon' || typeof record.payload?.familyId !== 'string') continue;
+      const presentation = presentations.find((row) => row?.entityRef?.gameReleaseId === record.gameReleaseId
+        && row.entityRef?.kind === 'weapon' && row.entityRef?.recordId === record.recordId && row.locale === 'zh-TW');
+      const ids = Array.isArray(presentation?.nameOfficialLocaleRefs)
+        ? presentation.nameOfficialLocaleRefs.filter((row) => row?.sourceLocale === 'en').map((row) => row.officialSourceId) : [];
+      const source = ids.length === 1 ? sources.find((row) => row?.officialSourceId === ids[0]
+        && row.sourceLocale === 'en' && row.entityRef?.recordId === record.recordId
+        && row.entityRef?.gameReleaseId === record.gameReleaseId) : null;
+      if (source && slugify(source.resolvedText) === familySlug) matches.add(record.payload.familyId);
+    }
+    if (matches.size !== 1) fail('weapon page does not resolve to exactly one split weapon family');
+    return [...matches][0];
+  }
+
+  function blessingSlug(recordId) {
+    return typeof recordId === 'string'
+      ? recordId.replace(/^darktide:blessing:/, '').replace(/[^A-Za-z0-9._-]/g, '-') : '';
+  }
+
+  function splitLeafName(filePath, prefix) {
+    return filePath.startsWith(prefix) && filePath.endsWith('.json')
+      ? filePath.slice(prefix.length, -'.json'.length) : '';
+  }
+
+  function validateSplitDocumentBinding(row, document, manifest) {
+    if (contract.manifestFormat(manifest) !== 'split') return;
+    const records = Array.isArray(document?.source?.records) ? document.source.records : [];
+    if (row.kind === 'weapons-index') {
+      if (records.some((record) => record?.kind !== 'weapon')) fail('weapons-index contains a non-weapon Source record');
+      const indexed = new Set(records.map((record) => record.payload?.familyId)
+        .filter((familyId) => typeof familyId === 'string' && familyId));
+      const declared = new Set(manifest.files.filter((file) => file.kind === 'weapon-family')
+        .map((file) => splitLeafName(file.path, 'domains/weapons/')));
+      if (indexed.size !== declared.size || [...indexed].some((familyId) => !declared.has(familyId))) {
+        fail('weapons-index familyId set does not match weapon-family manifest paths');
+      }
+    } else if (row.kind === 'weapon-family') {
+      const familyIds = new Set(records.filter((record) => record?.kind === 'weapon')
+        .map((record) => record.payload?.familyId).filter((familyId) => typeof familyId === 'string' && familyId));
+      const pathFamilyId = splitLeafName(row.path, 'domains/weapons/');
+      if (familyIds.size !== 1 || !familyIds.has(pathFamilyId)) {
+        fail('weapon-family familyId does not match its manifest path');
+      }
+    } else if (row.kind === 'blessings-index') {
+      if (records.some((record) => record?.kind !== 'blessing')) fail('blessings-index contains a non-blessing Source record');
+      const indexed = new Set(records.map((record) => blessingSlug(record.recordId)).filter(Boolean));
+      if (indexed.size !== records.length) fail('blessings-index recordId slugs must be unique');
+      const declared = new Set(manifest.files.filter((file) => file.kind === 'blessing')
+        .map((file) => splitLeafName(file.path, 'domains/blessings/')));
+      if (indexed.size !== declared.size || [...indexed].some((slug) => !declared.has(slug))) {
+        fail('blessings-index recordId slugs do not match blessing manifest paths');
+      }
+    } else if (row.kind === 'blessing') {
+      const roots = records.filter((record) => record?.kind === 'blessing');
+      const pathSlug = splitLeafName(row.path, 'domains/blessings/');
+      if (roots.length !== 1 || blessingSlug(roots[0].recordId) !== pathSlug) {
+        fail('blessing recordId does not match its manifest path');
+      }
+    }
+  }
+
+  function selectSplitFiles(manifest, page, documents = new Map()) {
+    const pathname = normalizePage(page);
+    const filesByPath = new Map(manifest.files.map((file) => [file.path, file]));
+    const selected = new Map();
+    const add = (file) => {
+      if (!file) fail('split page requires a domain file that is missing from the manifest');
+      if (!SPLIT_DOMAIN_KINDS.includes(file.kind)) fail('split page dependency kind is unsupported: ' + file.kind);
+      if (selected.has(file.path)) return;
+      selected.set(file.path, file);
+      for (const dependency of file.dependencies) add(filesByPath.get(dependency));
+    };
+    const addKind = (kind) => {
+      const rows = manifest.files.filter((file) => file.kind === kind);
+      if (rows.length !== 1) fail('split page requires exactly one ' + kind + ' file');
+      add(rows[0]);
+    };
+    if (pathname === '/build-editor' || pathname === '/abilities' || pathname.startsWith('/abilities/')) {
+      addKind('skills');
+    } else if (pathname.startsWith('/weapons/')) {
+      addKind('weapons-index');
+      addKind('blessings-index');
+      const index = documents.get('domains/weapons-index.json');
+      if (index) {
+        const familySlug = pathname.split('/')[2];
+        const familyId = familyIdForPath(index, familySlug);
+        add(filesByPath.get('domains/weapons/' + familyId + '.json'));
+      }
+    } else if (pathname === '/weapon-blessing-traits') {
+      addKind('blessings-index');
+      addKind('weapons-index');
+      for (const file of manifest.files.filter((row) => row.kind === 'blessing')) add(file);
+    }
+    for (const row of selected.values()) {
+      if (row.sizeBytes > LIMITS.fileBytes) fail('domain file exceeds the 16 MiB file limit: ' + row.path);
+    }
+    return [...selected.values()].sort((left, right) => left.path.localeCompare(right.path, 'en'));
+  }
+
+  function selectStoredSplitFiles(manifest, fileBytes) {
+    if (!(fileBytes instanceof Map) || fileBytes.size === 0) fail('stored split snapshot has no domain files');
+    const rows = [...fileBytes.keys()].map((filePath) => manifest.files.find((row) => row.path === filePath));
+    if (rows.some((row) => !row || !SPLIT_DOMAIN_KINDS.includes(row.kind))) {
+      fail('stored split snapshot contains an undeclared or unsupported domain file');
+    }
+    const kinds = rows.map((row) => row.kind);
+    const count = (kind) => kinds.filter((value) => value === kind).length;
+    const validSkill = rows.length === 2 && count('skills') === 1 && count('terms') === 1;
+    const validWeaponDetail = rows.length === 3 && count('weapons-index') === 1
+      && count('blessings-index') === 1 && count('weapon-family') === 1;
+    const blessingCount = count('blessing');
+    const allBlessingCount = manifest.files.filter((row) => row.kind === 'blessing').length;
+    const validBlessing = rows.length === blessingCount + 2 && count('weapons-index') === 1
+      && count('blessings-index') === 1 && blessingCount > 0
+      && blessingCount === allBlessingCount;
+    if (!validSkill && !validWeaponDetail && !validBlessing) {
+      fail('stored split snapshot file set does not match a supported page closure');
+    }
+    const paths = new Set(rows.map((row) => row.path));
+    for (const row of rows) {
+      if (row.sizeBytes > LIMITS.fileBytes) fail('domain file exceeds the 16 MiB file limit: ' + row.path);
+      if (row.dependencies.some((dependency) => !paths.has(dependency))) {
+        fail('stored split snapshot omits a selected file dependency');
+      }
+    }
+    return rows.sort((left, right) => left.path.localeCompare(right.path, 'en'));
+  }
+
+  async function selectPageFiles(manifest, page, cryptoApi, documents, fileBytes) {
+    if (contract.manifestFormat(manifest) === 'legacy') return selectCoreFiles(manifest, cryptoApi);
+    if (page === undefined) return selectStoredSplitFiles(manifest, fileBytes);
+    return selectSplitFiles(manifest, page, documents);
   }
 
   async function readBounded(response, label, maxBytes, total, signal) {
@@ -190,7 +353,7 @@
         if (chunk.byteLength === 0) continue;
         length += chunk.byteLength;
         if (length > maxBytes) fail(label + ' exceeds the ' + formatByteLimit(maxBytes) + ' limit');
-        if (total && total.value + chunk.byteLength > total.limit) fail('snapshot exceeds the 16 MiB total byte limit');
+        if (total && total.value + chunk.byteLength > total.limit) fail('snapshot exceeds the 24 MiB total byte limit');
         if (total) total.value += chunk.byteLength;
         chunks.push(chunk.slice());
       }
@@ -238,14 +401,14 @@
     return readBounded(response, label, maxBytes, total, signal);
   }
 
-  async function inspectRawSnapshot({ versionBytes, manifestBytes, fileBytes, identity, cryptoApi }) {
+  async function inspectRawSnapshot({ versionBytes, manifestBytes, fileBytes, identity, page, cryptoApi }) {
     requireDependencies();
     const normalizedIdentity = requireIdentity(identity);
     const versionRaw = asBytes(versionBytes, 'stored version index');
     const manifestRaw = asBytes(manifestBytes, 'stored manifest');
     if (manifestRaw.byteLength > LIMITS.manifestBytes) fail('manifest exceeds the 256 KiB limit');
     const total = { value: manifestRaw.byteLength, limit: LIMITS.snapshotBytes };
-    if (total.value > total.limit) fail('snapshot exceeds the 16 MiB total byte limit');
+    if (total.value > total.limit) fail('snapshot exceeds the 24 MiB total byte limit');
 
     const { version, release } = validateVersionBytes(versionRaw, normalizedIdentity, contract);
     const manifestPath = canonicalManifestPath(release);
@@ -260,9 +423,25 @@
     if (!exactRelease) throw noCompatibleRelease(normalizedIdentity.gameVersion);
     if (exactRelease.manifest_path !== manifestPath) fail('manifest metadata differs from the selected version pointer');
 
-    const selectedFiles = await selectCoreFiles(manifest, cryptoApi);
+    const parsedDocuments = new Map();
+    if (fileBytes instanceof Map) {
+      const manifestFiles = new Map(manifest.files.map((row) => [row.path, row]));
+      for (const [filePath, rawValue] of fileBytes) {
+        const row = manifestFiles.get(filePath);
+        if (!row) fail('snapshot raw file map contains a path not declared by the manifest');
+        const raw = asBytes(rawValue, 'domain file ' + filePath);
+        if (raw.byteLength > LIMITS.fileBytes) fail('domain file exceeds the 16 MiB file limit: ' + filePath);
+        if (raw.byteLength !== row.sizeBytes) fail('domain file size does not match the manifest pin: ' + filePath);
+        if (await sha256(raw, cryptoApi) !== row.sha256) fail('domain file SHA-256 does not match the manifest pin: ' + filePath);
+        const document = decodeJson(raw, 'domain file ' + filePath);
+        validateSplitDocumentBinding(row, document, manifest);
+        domainContract.validateDomain(document, { kind: row.kind, gameReleaseId: manifest.gameReleaseId });
+        parsedDocuments.set(filePath, document);
+      }
+    }
+    const selectedFiles = await selectPageFiles(manifest, page, cryptoApi, parsedDocuments, fileBytes);
     const declaredTotal = manifestRaw.byteLength + selectedFiles.reduce((sum, row) => sum + row.sizeBytes, 0);
-    if (declaredTotal > LIMITS.snapshotBytes) fail('snapshot declared size exceeds the 16 MiB total byte limit');
+    if (declaredTotal > LIMITS.snapshotBytes) fail('snapshot declared size exceeds the 24 MiB total byte limit');
     if (!(fileBytes instanceof Map) || fileBytes.size !== selectedFiles.length) fail('snapshot raw file map is incomplete or contains unexpected paths');
 
     const files = new Map();
@@ -270,15 +449,16 @@
     for (const row of selectedFiles) {
       const rawValue = fileBytes.get(row.path);
       const raw = asBytes(rawValue, 'domain file ' + row.path);
-      if (raw.byteLength > LIMITS.fileBytes) fail('domain file exceeds the 8 MiB file limit: ' + row.path);
+      if (raw.byteLength > LIMITS.fileBytes) fail('domain file exceeds the 16 MiB file limit: ' + row.path);
       total.value += raw.byteLength;
-      if (total.value > total.limit) fail('snapshot exceeds the 16 MiB total byte limit');
+      if (total.value > total.limit) fail('snapshot exceeds the 24 MiB total byte limit');
       if (raw.byteLength !== row.sizeBytes) fail('domain file size does not match the manifest pin: ' + row.path);
       if (await sha256(raw, cryptoApi) !== row.sha256) fail('domain file SHA-256 does not match the manifest pin: ' + row.path);
-      const document = decodeJson(raw, 'domain file ' + row.path);
+      const document = parsedDocuments.get(row.path);
+      validateSplitDocumentBinding(row, document, manifest);
       domainContract.validateDomain(document, { kind: row.kind, gameReleaseId: manifest.gameReleaseId });
       files.set(row.path, raw.slice());
-      domains.set(row.kind, document);
+      domains.set(contract.manifestFormat(manifest) === 'legacy' ? row.kind : row.path, document);
     }
     const validatedRegistry = domainContract.validateDomainSet(domains, manifest, normalizedIdentity);
     return {
@@ -317,7 +497,8 @@
     });
   }
 
-  async function verifyStoredSnapshot({ versionBytes, manifestBytes, files, identity, cryptoApi = globalThis.crypto, signal } = {}) {
+  async function verifyStoredSnapshot({ versionBytes, manifestBytes, files, identity, page,
+    cryptoApi = globalThis.crypto, signal } = {}) {
     requireDependencies();
     const normalizedIdentity = requireIdentity(identity);
     return withDeadline(signal, async () => inspectRawSnapshot({
@@ -325,6 +506,7 @@
       manifestBytes,
       fileBytes: files,
       identity: normalizedIdentity,
+      page,
       cryptoApi
     }));
   }
@@ -333,6 +515,17 @@
     if (!left || !right || typeof left !== 'object' || typeof right !== 'object') return false;
     return ['content_version', 'data_revision', 'manifest_path', 'manifest_sha256']
       .every((field) => left[field] === right[field]);
+  }
+
+  function snapshotSupportsPage(snapshot, page) {
+    if (!snapshot || !(snapshot.files instanceof Map) || !(snapshot.domains instanceof Map) || !snapshot.manifest) return false;
+    if (contract.manifestFormat(snapshot.manifest) === 'legacy') return true;
+    try {
+      const selected = selectSplitFiles(snapshot.manifest, page, snapshot.domains);
+      return selected.length === snapshot.files.size && selected.every((row) => snapshot.files.has(row.path));
+    } catch (_) {
+      return false;
+    }
   }
 
   async function fetchVersionIndex({ fetchImpl = globalThis.fetch, identity, cryptoApi = globalThis.crypto, signal } = {}) {
@@ -347,7 +540,7 @@
     });
   }
 
-  async function downloadPackageFromVersion({ fetchImpl, identity, versionBytes, cryptoApi, signal }) {
+  async function downloadPackageFromVersion({ fetchImpl, identity, versionBytes, page, cryptoApi, signal }) {
     const normalizedIdentity = requireIdentity(identity);
     const versionRaw = asBytes(versionBytes, 'validated version index');
     const { version, release } = validateVersionBytes(versionRaw, normalizedIdentity, contract);
@@ -367,9 +560,9 @@
     if (!matchedRelease || matchedRelease.manifest_path !== manifestPath) {
       throw noCompatibleRelease(normalizedIdentity.gameVersion);
     }
-    const selectedFiles = await selectCoreFiles(manifest, cryptoApi);
+    let selectedFiles = await selectPageFiles(manifest, page, cryptoApi, new Map());
     if (manifestBytes.byteLength + selectedFiles.reduce((sum, row) => sum + row.sizeBytes, 0) > LIMITS.snapshotBytes) {
-      fail('snapshot declared size exceeds the 16 MiB total byte limit');
+      fail('snapshot declared size exceeds the 24 MiB total byte limit');
     }
     const fileBytes = new Map();
     for (const row of selectedFiles) {
@@ -377,32 +570,47 @@
       fileBytes.set(row.path, await fetchJsonBytes(fetchImpl, url, 'domain file ' + row.path,
         LIMITS.fileBytes, total, signal));
     }
+    if (contract.manifestFormat(manifest) === 'split' && String(page?.pathname || '').replace(/\/$/, '').startsWith('/weapons/')) {
+      const documents = new Map([...fileBytes].map(([filePath, raw]) => [filePath, decodeJson(raw, 'domain file ' + filePath)]));
+      selectedFiles = await selectPageFiles(manifest, page, cryptoApi, documents);
+      if (manifestBytes.byteLength + selectedFiles.reduce((sum, row) => sum + row.sizeBytes, 0) > LIMITS.snapshotBytes) {
+        fail('snapshot declared size exceeds the 24 MiB total byte limit');
+      }
+      for (const row of selectedFiles) {
+        if (fileBytes.has(row.path)) continue;
+        const url = filePathForManifest(manifestPath, row.path);
+        fileBytes.set(row.path, await fetchJsonBytes(fetchImpl, url, 'domain file ' + row.path,
+          LIMITS.fileBytes, total, signal));
+      }
+    }
     return inspectRawSnapshot({
       versionBytes: versionRaw,
       manifestBytes,
       fileBytes,
       identity: normalizedIdentity,
+      page,
       cryptoApi
     });
   }
 
-  async function downloadSnapshotFromVersion({ fetchImpl = globalThis.fetch, identity, versionBytes,
+  async function downloadSnapshotFromVersion({ fetchImpl = globalThis.fetch, identity, versionBytes, page,
     cryptoApi = globalThis.crypto, signal } = {}) {
     requireDependencies();
     const normalizedIdentity = requireIdentity(identity);
     return withDeadline(signal, (requestSignal) => downloadPackageFromVersion({
-      fetchImpl, identity: normalizedIdentity, versionBytes, cryptoApi, signal: requestSignal
+      fetchImpl, identity: normalizedIdentity, versionBytes, page, cryptoApi, signal: requestSignal
     }));
   }
 
-  async function downloadSnapshot({ fetchImpl = globalThis.fetch, identity, cryptoApi = globalThis.crypto, signal } = {}) {
+  async function downloadSnapshot({ fetchImpl = globalThis.fetch, identity, page,
+    cryptoApi = globalThis.crypto, signal } = {}) {
     requireDependencies();
     const normalizedIdentity = requireIdentity(identity);
     return withDeadline(signal, async (requestSignal) => {
       const versionBytes = await fetchJsonBytes(fetchImpl, fixedUrl('/version.json'), 'version index',
         LIMITS.versionBytes, null, requestSignal);
       return downloadPackageFromVersion({
-        fetchImpl, identity: normalizedIdentity, versionBytes, cryptoApi, signal: requestSignal
+        fetchImpl, identity: normalizedIdentity, versionBytes, page, cryptoApi, signal: requestSignal
       });
     });
   }
@@ -413,6 +621,7 @@
     downloadSnapshotFromVersion,
     fetchVersionIndex,
     sameReleasePointer,
+    snapshotSupportsPage,
     verifyStoredSnapshot
   });
 });

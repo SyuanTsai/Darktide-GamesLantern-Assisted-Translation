@@ -162,7 +162,8 @@ test('UnitT10_ContentEntryAcceptsOnlyExactSupportedGamesLanternRoutes', () => {
   // Scenario: Given top-level locations on supported Games Lantern routes and lookalike URLs.
   // Purpose: Keep the local adapter limited to the observed exact HTTPS origin and route shapes.
   for (const pathname of ['/build-editor', '/abilities', '/abilities/brain-rupture',
-    '/weapon-blessing-traits', '/weapons/assault-chainaxe', '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe']) {
+    '/weapon-blessing-traits', '/weapons/assault-chainaxe',
+    '/weapons/assault-chainaxe/orestes-mk-iv-assault-chainaxe']) {
     assert.equal(isSupportedPage({ origin: GAME_ORIGIN, pathname }), true, pathname);
   }
   for (const location of [
@@ -171,6 +172,8 @@ test('UnitT10_ContentEntryAcceptsOnlyExactSupportedGamesLanternRoutes', () => {
     { origin: 'http://darktide.gameslantern.com', pathname: '/abilities/brain-rupture' },
     { origin: GAME_ORIGIN, pathname: '/settings' },
     { origin: GAME_ORIGIN, pathname: '/abilities/%2e%2e' },
+    { origin: GAME_ORIGIN, pathname: '/weapons' },
+    { origin: GAME_ORIGIN, pathname: '/weapon-blessing-traits/rev-it-up' },
     { origin: GAME_ORIGIN, pathname: '/weapons/one/two/three' }
   ]) assert.equal(isSupportedPage(location), false);
 });

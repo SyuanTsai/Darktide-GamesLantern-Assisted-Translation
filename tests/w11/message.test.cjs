@@ -27,6 +27,8 @@ test('UnitT10_MessageHandlerAcceptsOnlyLocalExtensionOrTrustedTopFrameRoute', as
     url: 'chrome-extension://' + EXTENSION_ID + '/popup.html' };
   assert.equal(workerApi.trustedSender(extensionSender, EXTENSION_ID), true);
   assert.equal(workerApi.trustedSender(gameSender(), EXTENSION_ID), true);
+  assert.equal(workerApi.trustedSender(gameSender({ url: GAME_ORIGIN + '/weapons' }), EXTENSION_ID), false);
+  assert.equal(workerApi.trustedSender(gameSender({ url: GAME_ORIGIN + '/weapon-blessing-traits/rev-it-up' }), EXTENSION_ID), false);
   for (const sender of [
     gameSender({ id: 'ponmlkjihgfedcbaponmlkjihgfedcba' }),
     gameSender({ url: 'https://darktide.gameslantern.com.evil/abilities/brain-rupture' }),
@@ -51,7 +53,8 @@ test('UnitT10_MessageHandlerAcceptsOnlyLocalExtensionOrTrustedTopFrameRoute', as
   assert.equal(keepAlive, true);
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(received.identity.snapshotId, IDENTITY.snapshotId);
-  assert.deepEqual(received.options, { active: true, manual: false });
+  assert.deepEqual(received.options, { active: true, manual: false,
+    page: { pathname: '/abilities/brain-rupture' } });
   assert.equal(response.ok, true);
   assert.equal(response.result.source, 'original');
 });

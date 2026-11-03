@@ -78,10 +78,10 @@
       const files = new Map();
       let totalBytes = versionBytes.byteLength + manifestBytes.byteLength;
       for (let index = 0; index < CORE_PATHS.length; index += 1) {
-        const bytes = await readLocalBytes(chromeApi, fetchImpl, BASELINE_PATHS[index + 2], 8 * 1024 * 1024);
+        const bytes = await readLocalBytes(chromeApi, fetchImpl, BASELINE_PATHS[index + 2], 16 * 1024 * 1024);
         if (!bytes) return null;
         totalBytes += bytes.byteLength;
-        if (totalBytes > 16 * 1024 * 1024) throw new Error('W10 extension-local baseline exceeds the snapshot byte limit');
+        if (totalBytes > 24 * 1024 * 1024) throw new Error('W10 extension-local baseline exceeds the snapshot byte limit');
         files.set(CORE_PATHS[index], bytes);
       }
       return { versionBytes, manifestBytes, files };

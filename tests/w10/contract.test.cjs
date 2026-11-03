@@ -11,6 +11,7 @@ const { matchReleaseIdentity, selectConsumerFiles, selectGameRelease, validateMa
 const {
   CORE_DOMAIN_KINDS,
   makeManifest,
+  makeSplitManifest,
   makeSamePatchRollbackIndexes,
   makeVersion,
   makeVersionForManifest,
@@ -190,9 +191,43 @@ test('UnitT60_RejectsUnknownFeaturesInvalidTierRequirementsAndUnsafePaths', asyn
   await assert.rejects(() => validateManifest(duplicate, { cryptoApi: webcrypto }), /duplicate file path/i);
 
   const caseCollision = makeManifest();
-  caseCollision.files[1].path = 'DOMAINS/skills.json';
+  caseCollision.files.find((file) => file.kind === 'terms').path = 'DOMAINS/skills.json';
+  caseCollision.files.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
   resealManifest(caseCollision);
   await assert.rejects(() => validateManifest(caseCollision, { cryptoApi: webcrypto }), /case-insensitive collision/i);
+});
+
+test('UnitT65_AcceptsCanonicalSplitDomainsAndRejectsMixedOrMismatchedFormats', async () => {
+  // Scenario: Given canonical split rows and variants that mix legacy rows, omit the flag, or break leaf dependencies.
+  // Purpose: Accept the v1 split format without weakening the permanent legacy format or its fail-closed boundary.
+  const split = makeSplitManifest();
+
+  // When the canonical split manifest is validated.
+  assert.equal(await validateManifest(split, { cryptoApi: webcrypto }), split);
+
+  // Then format mixing, flag mismatches, non-canonical dependencies, and unsorted rows are rejected.
+  const mixed = structuredClone(split);
+  mixed.files.push({ kind: 'weapons', path: 'domains/weapons.json', sizeBytes: 1,
+    sha256: '8'.repeat(64), dependencies: [] });
+  mixed.files.sort((left, right) => Buffer.compare(Buffer.from(left.path), Buffer.from(right.path)));
+  resealManifest(mixed);
+  await assert.rejects(() => validateManifest(mixed, { cryptoApi: webcrypto }), /mix|legacy.*split|split.*legacy/i);
+
+  const missingFlag = structuredClone(split);
+  missingFlag.compatibility.requiredFeatures = missingFlag.compatibility.requiredFeatures
+    .filter((feature) => feature !== 'split-weapon-blessing-domains-v1');
+  resealManifest(missingFlag);
+  await assert.rejects(() => validateManifest(missingFlag, { cryptoApi: webcrypto }), /split.*feature|feature.*split/i);
+
+  const badDependency = structuredClone(split);
+  badDependency.files.find((file) => file.kind === 'weapon-family').dependencies = [];
+  resealManifest(badDependency);
+  await assert.rejects(() => validateManifest(badDependency, { cryptoApi: webcrypto }), /weapon-family.*depend|dependency/i);
+
+  const unsorted = structuredClone(split);
+  unsorted.files.reverse();
+  resealManifest(unsorted);
+  await assert.rejects(() => validateManifest(unsorted, { cryptoApi: webcrypto }), /sorted.*path|path.*order/i);
 });
 
 test('UnitT70_SelectsOnlyTheRequiredSupportedDependencyClosure', async () => {

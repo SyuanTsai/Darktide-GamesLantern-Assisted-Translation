@@ -154,3 +154,39 @@ test('UnitT50_RejectsDomainIdentityAndDuplicateRecordKeysAndExportsBrowserGlobal
   assert.throws(() => domains.validateDomain(duplicateRecords, { kind: 'skills', gameReleaseId: GAME_RELEASE_ID }), /duplicates a Source record/i);
   assert.deepEqual(Object.keys(browserGlobal.W10SharedDomains).sort(), Object.keys(domains).sort());
 });
+
+test('UnitT60_ValidatesSplitIndexesAndRepeatedLeafKindsWithoutRequiringIndexClosures', () => {
+  // Scenario: Given split indexes with intentionally pruned closures and multiple fully closed leaf documents.
+  // Purpose: Accept the v1 index/leaf topology while keeping full leaf typed closures fail-closed.
+  const weaponRef = { recordId: 'fixture:weapon:chainaxe', gameReleaseId: GAME_RELEASE_ID, kind: 'weapon' };
+  const omittedStat = { recordId: 'fixture:stat:omitted-from-index', gameReleaseId: GAME_RELEASE_ID, kind: 'stat-definition' };
+  const weaponsIndex = makeDomain('weapons-index', (document) => {
+    document.source.records.push({ ...weaponRef, payload: { familyId: 'chainaxe_p1', statRefs: [omittedStat] } });
+    return document;
+  });
+  const family = makeDomain('weapon-family', (document) => {
+    document.source.records.push(
+      { ...weaponRef, payload: { familyId: 'chainaxe_p1', statRefs: [omittedStat] } },
+      { ...omittedStat, payload: {} }
+    );
+    return document;
+  });
+  const secondFamily = makeDomain('weapon-family');
+  const fixture = makeSyntheticPackage();
+  const splitDomains = new Map([
+    ['domains/skills.json', fixture.domains.get('skills')],
+    ['domains/terms.json', fixture.domains.get('terms')],
+    ['domains/weapons-index.json', weaponsIndex],
+    ['domains/weapons/chainaxe_p1.json', family],
+    ['domains/weapons/other.json', secondFamily]
+  ]);
+
+  assert.equal(domains.validateDomain(weaponsIndex, { kind: 'weapons-index', gameReleaseId: GAME_RELEASE_ID }), weaponsIndex);
+  assert.equal(domains.validateDomain(family, { kind: 'weapon-family', gameReleaseId: GAME_RELEASE_ID }), family);
+  assert.equal(domains.validateDomainSet(splitDomains, fixture.manifest, validIdentity(fixture)).domains, splitDomains);
+
+  const incompleteLeaf = structuredClone(family);
+  incompleteLeaf.source.records.pop();
+  assert.throws(() => domains.validateDomain(incompleteLeaf,
+    { kind: 'weapon-family', gameReleaseId: GAME_RELEASE_ID }), /typed.*closure|closure.*incomplete/i);
+});
