@@ -7,10 +7,10 @@ const path = require('node:path');
 const { webcrypto } = require('node:crypto');
 const contract = require('../../extension/shared/contract.js');
 const productionDataset = require('../../extension/shared/production-dataset.js');
+const { BASELINE_PINS, ensureW15Baseline } = require('./release-baseline.cjs');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const PRODUCTION_ORIGIN = 'https://darktide.tw-syuan.com';
-const BASELINE_DIR = path.join(REPOSITORY_ROOT, 'extension', 'release-baseline', 'w15');
 const ICON_DIR = path.join(REPOSITORY_ROOT, 'extension', 'icons');
 const ZIP_SCRIPT = path.join(__dirname, 'package-zip.ps1');
 const CORE_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
@@ -33,14 +33,6 @@ const W15 = Object.freeze({
   buildId: '6872aee741cef7f150bd79fc25ad251276b15f6a81a9c287f5e3623b6df422dc',
   dataRevision: 'f182e7b4ba6fb04c9713ebada2cdbc8aabdd31d5b52b30a754e188ecc3fb5b2f',
   manifestSha256: 'fcd7ff131ae55315fa0b9323355ed0e7b69788ffe03841de025723cec16e8642'
-});
-const BASELINE_PINS = Object.freeze({
-  'version.json': Object.freeze({ sizeBytes: 655, sha256: 'f259d3545dd5f80d4310a859a8e016df9fe42cc19ef5612431eaf8b055e13e0e' }),
-  'manifest.json': Object.freeze({ sizeBytes: 2259, sha256: W15.manifestSha256 }),
-  'domains/blessings.json': Object.freeze({ sizeBytes: 113990, sha256: '3e72d21be03b7beb966558665b7a4eb3fb389ea23fab8cf7c1cf722a409b22b5' }),
-  'domains/skills.json': Object.freeze({ sizeBytes: 165051, sha256: '108628d9c9262541bd95741fcc0ef52b08ff874d02ce11eb0684bb52ef6da449' }),
-  'domains/terms.json': Object.freeze({ sizeBytes: 124557, sha256: '602cb6aca68e6add34aaa8eb0552efbba66324a97e7c4fbc406f03c0932b78f6' }),
-  'domains/weapons.json': Object.freeze({ sizeBytes: 6798596, sha256: '132ec16e830d4af560bd212095f4fa0209bc8f238eb17a26528e112e6ebd41a8' })
 });
 const ICON_PINS = Object.freeze({
   'source.svg': 'c569271e10e615072a265bb42cecba3a64acaa6a88537cbd115dff35ecdd5b07',
@@ -286,7 +278,7 @@ async function buildProductionExtensionPackage(options = {}) {
   }
   const version = validateVersion(options.version);
   const outputDirectory = validateOutputDirectory(options.outputDir);
-  const baselineDirectory = options.baselineDir === undefined ? BASELINE_DIR : path.resolve(options.baselineDir);
+  const baselineDirectory = options.baselineDir === undefined ? await ensureW15Baseline() : path.resolve(options.baselineDir);
   const iconDirectory = options.iconDir === undefined ? ICON_DIR : path.resolve(options.iconDir);
   const baseline = await readBaseline(baselineDirectory);
   const icons = readIcons(iconDirectory);

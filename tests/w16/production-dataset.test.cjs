@@ -11,7 +11,10 @@ const presentation = require('../../extension/shared/presentation.js');
 const { serializeNativeSnapshot } = require('../../extension/shared/content-entry.js');
 const { createProductionDatasetResolver } = require('../../extension/shared/production-dataset.js');
 
-const BASELINE_DIR = path.join(__dirname, '..', '..', 'extension', 'release-baseline', 'w15');
+const { ensureW15Baseline } = require('../../scripts/release/release-baseline.cjs');
+
+let BASELINE_DIR;
+test.before(async () => { BASELINE_DIR = await ensureW15Baseline(); });
 const GAME_LINE_PIN = Object.freeze({
   schema: 'w16-production-dataset-pin/1',
   gameVersion: '1.13.2',
