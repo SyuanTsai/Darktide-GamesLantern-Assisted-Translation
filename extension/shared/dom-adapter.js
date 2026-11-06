@@ -384,6 +384,19 @@
     return panel;
   }
 
+  function appendMarkedText(element, text, rows) {
+    const document = element.ownerDocument;
+    let position = 0;
+    for (const row of [...rows].sort((a, b) => a.start - b.start)) {
+      if (row.start < position || row.end > text.length) continue;
+      element.append(document.createTextNode(text.slice(position, row.start)));
+      const mark = document.createElement('mark'); mark.className = 'glat-errata-mark'; mark.textContent = text.slice(row.start, row.end); element.append(mark);
+      const note = document.createElement('small'); note.className = 'glat-errata-note'; note.textContent = '（勘誤：' + row.corrected + '）'; element.append(note);
+      position = row.end;
+    }
+    element.append(document.createTextNode(text.slice(position)));
+  }
+
   function makeWeaponOfficial(document, mark) {
     const official = mark && mark.official;
     const resolvedText = typeof official?.resolvedText === 'string' ? official.resolvedText : '';
@@ -395,7 +408,7 @@
     heading.textContent = '官方繁體中文';
     const resolved = document.createElement('p');
     resolved.className = 'w11-extension-official-text';
-    resolved.textContent = resolvedText;
+    appendMarkedText(resolved, resolvedText, (mark.anchoredErrata || []).filter(row => row.field === 'official'));
     section.append(heading, resolved);
 
     const sourceText = typeof official.sourceText === 'string' ? official.sourceText : '';
@@ -445,9 +458,10 @@
     const content = document.createElement('div'); panel.append(content);
     function renderMark(mark) {
       content.replaceChildren();
-      const title = document.createElement('h3'); title.textContent = (mark.name || mark.nativeName) + '／' + mark.markLabel; content.append(title);
+      const title = document.createElement('h3'); appendMarkedText(title, (mark.name || mark.nativeName) + '／' + mark.markLabel, (mark.anchoredErrata || []).filter(row => row.field === 'name')); content.append(title);
       const official = makeWeaponOfficial(document, mark); if (official) content.append(official);
-      const details = makeDetails(document, mark); if (details) content.append(details);
+      const fallback = official ? [] : (mark.anchoredErrata || []).filter(row => row.field === 'official').map(row => row.fallback);
+      const details = makeDetails(document, { ...mark, errata: [...mark.errata, ...fallback] }); if (details) content.append(details);
       for (const bar of mark.bars || []) addSection(content, bar.name.zh || bar.name.en || bar.id,
         bar.stats.map(stat => (stat.name.zh || stat.name.en || stat.key) + '：' + stat.min + '～' + stat.max));
       addSection(content, '動作', (mark.actions || []).map(a => (a.name.zh || a.name.en || a.id) + '（' + a.slot + '／' + a.type + '）'));
@@ -602,15 +616,47 @@
         if (row.node.nodeValue === row.value) continue;
         changes.push({ node: row.node, originalValue: row.node.nodeValue, writtenValue: row.value });
       }
-      const details = makeDetails(document, model);
+      const pending = [...(model.anchoredErrata || [])];
+      const inserted = [];
+      for (const field of ['name', 'official']) {
+        const full = field === 'name' ? model.translatedName : model.translatedDescription;
+        const candidates = field === 'name' ? writes.filter(row => row.node === titleNode) : descriptionWrites;
+        let cursor = 0;
+        for (const row of candidates) {
+          if (!row.value) continue;
+          const offset = full.indexOf(row.value, cursor);
+          if (offset < 0) continue;
+          cursor = offset + row.value.length;
+          const selected = pending.filter(a => a.field === field && a.start >= offset && a.end <= cursor).sort((a, b) => a.start - b.start);
+          let end = offset;
+          const accepted = selected.filter(a => { if (a.start < end) return false; end = a.end; return true; });
+          if (!accepted.length) continue;
+          let change = changes.find(c => c.node === row.node);
+          if (!change) { change = { node: row.node, originalValue: row.node.nodeValue, writtenValue: row.value }; changes.push(change); }
+          const fragment = document.createElement('span');
+          appendMarkedText(fragment, row.value, accepted.map(a => ({ ...a, start: a.start - offset, end: a.end - offset })));
+          inserted.push({ node: row.node, fragment, change, accepted });
+          for (const a of accepted) pending.splice(pending.indexOf(a), 1);
+        }
+      }
+      const details = makeDetails(document, { ...model, errata: [...model.errata, ...pending.map(a => a.fallback)] });
       if (!changes.length && !details) return null;
       if (details && slot.tooltip) details.classList.add('w11-extension-tooltip-panel');
       for (const change of changes) change.node.nodeValue = change.writtenValue;
+      const ownedNodes = details ? [details] : [];
+      for (const entry of inserted) {
+        const { node, fragment, change } = entry;
+        const children = [...fragment.childNodes];
+        node.nodeValue = children.shift().nodeValue;
+        change.writtenValue = node.nodeValue;
+        let reference = node.nextSibling;
+        for (const child of children) { node.parentNode.insertBefore(child, reference); ownedNodes.push(child); for (const text of child.nodeType === 3 ? [child] : textNodes(child)) changes.push({ node: text, originalValue: '', writtenValue: text.nodeValue }); }
+      }
       if (details) {
         if (slot.tooltip || slot.detail) slot.descriptionElement.parentNode.insertBefore(details, slot.descriptionElement.nextSibling);
         else slot.anchor.parentNode.insertBefore(details, slot.anchor.nextSibling);
       }
-      return { anchor: slot.anchor, changes, details, identityKey: slot.identityKey };
+      return { anchor: slot.anchor, changes, details, ownedNodes, identityKey: slot.identityKey };
     }
 
     function applyWeapon(slot, family, mark, marks) {
@@ -661,8 +707,8 @@
       const render = () => {
         result.replaceChildren(); if (select.value === '') return;
         const row = rows[Number(select.value)]; if (!row) return;
-        const name = document.createElement('h3'); name.textContent = row.translatedName || row.nativeName; result.append(name);
-        if (row.translatedDescription) { const description = document.createElement('p'); description.className = 'w11-extension-blessing-description'; description.textContent = row.translatedDescription; result.append(description); }
+        const name = document.createElement('h3'); appendMarkedText(name, row.translatedName || row.nativeName, (row.anchoredErrata || []).filter(a => a.field === 'name')); result.append(name);
+        if (row.translatedDescription) { const description = document.createElement('p'); description.className = 'w11-extension-blessing-description'; appendMarkedText(description, row.translatedDescription, (row.anchoredErrata || []).filter(a => a.field === 'official')); result.append(description); }
         const details = makeDetails(document, row); if (details) result.append(details);
         const table = makeTierTable(document, row.tierTable); if (table) result.append(table);
         const applicability = document.createElement('p'); applicability.setAttribute('data-w11-blessing-applicability', '');

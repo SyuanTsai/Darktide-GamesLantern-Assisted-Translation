@@ -1,6 +1,17 @@
 const test=require('node:test'); const assert=require('node:assert/strict');
 const {snapshot,displayFixture}=require('../helpers/source-data-display.cjs');
 const p=require('../../extension/shared/presentation.js');
+// Scenario: exact anchors select occurrences in either source field. Purpose: reject missing and out-of-range matches without normalization.
+test('UnitT05_精確定位勘誤',()=>{
+ const item={official:{zh:'甲甲甲',en:null},name:{zh:'名稱',en:null}};
+ const e={anchor:{field:'official',locale:'zh',text:'甲',occurrence:2}};
+ assert.deepEqual(p.locateErratum(item,e),{field:'official',locale:'zh',start:1,end:2});
+ assert.equal(p.locateErratum(item,{anchor:{...e.anchor,text:'乙'}}),null);
+ assert.equal(p.locateErratum(item,{anchor:{...e.anchor,occurrence:4}}),null);
+ assert.equal(p.locateErratum(item,{anchor:{...e.anchor,locale:'en'}}),null);
+ assert.deepEqual(p.locateErratum(item,{anchor:{field:'name',locale:'zh',text:'名稱',occurrence:1}}),{field:'name',locale:'zh',start:0,end:2});
+ assert.equal(p.locateErratum(item,{}),null);
+});
 // Scenario: validated new documents enter the presentation boundary. Purpose: protect field projection, text guards and term context.
 test('UnitT10_投影四份文件與文字防護',()=>{
  const s=snapshot(); const [a,b]=p.buildSkillViewModels(s);

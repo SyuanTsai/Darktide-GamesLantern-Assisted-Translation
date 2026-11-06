@@ -29,9 +29,17 @@
     }));
   }
 
-  function locateErratum(text, erratum) {
-    // 待 WP3 定案定位欄位（精確子字串與出現次序）後在此接上；目前不搜尋或猜測位置。
-    return null;
+  function locateErratum(item, erratum) {
+    const a = erratum?.anchor;
+    const text = a && item?.[a.field]?.[a.locale];
+    if (typeof text !== 'string' || typeof a.text !== 'string' || !a.text || !Number.isInteger(a.occurrence) || a.occurrence < 1) return null;
+    let start = -1, next = 0;
+    for (let i = 0; i < a.occurrence; i += 1) {
+      start = text.indexOf(a.text, next);
+      if (start < 0) return null;
+      next = start + a.text.length;
+    }
+    return { field: a.field, locale: a.locale, start, end: next };
   }
 
   function projectWeaponCurves(item) {
@@ -47,20 +55,25 @@
 
   // Called only at the presentation boundary with a spec1-validated document set.
   function projectItem(item, documents) {
+    const translatedName = localizedName(item), translatedDescription = safeText(item.official.zh);
+    const anchoredErrata = [], errata = [];
+    for (const e of item.errata.filter(row => row.locale === 'zh')) {
+      const location = locateErratum(item, e);
+      if (location && location.locale === 'zh' && (location.field === 'name' ? translatedName : translatedDescription)
+        && !anchoredErrata.some(a => a.field === location.field && a.start < location.end && location.start < a.end)) anchoredErrata.push({ ...location, corrected: e.corrected, fallback: e.official + ' → ' + e.corrected });
+      else errata.push(e.official + ' → ' + e.corrected);
+    }
     return {
       id: item.id,
       entityRef: { recordId: item.id },
       aliases: item.aliases?.gameslantern || null,
       nativeName: item.name.en,
       nativeDescription: item.official.en,
-      translatedName: localizedName(item),
-      translatedDescription: safeText(item.official.zh),
+      translatedName, translatedDescription,
       translationParams: {},
       detailSections: SECTION_ORDER.filter(([key]) => item.explanation[key].trim())
         .map(([key, heading]) => ({ sectionId: key, heading, items: [item.explanation[key]] })),
-      errata: item.errata.filter(erratum => erratum.locale === 'zh'
-        && locateErratum(item.official.zh, erratum) === null)
-        .map(erratum => erratum.official + ' → ' + erratum.corrected),
+      errata, anchoredErrata,
       terms: documents.terms.items.filter(term => term.values.refs.includes(item.id) && localizedName(term))
         .map(term => {
           const label = localizedName(term);

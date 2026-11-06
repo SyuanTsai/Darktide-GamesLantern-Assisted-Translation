@@ -2,6 +2,25 @@ const test = require('node:test'); const assert = require('node:assert/strict');
 const { snapshot } = require('../helpers/source-data-display.cjs');
 const { createDocument, descendants } = require('../helpers/display-dom.cjs');
 const p = require('../../extension/shared/presentation.js'); const a = require('../../extension/shared/dom-adapter.js');
+// Scenario: a skill anchor matches, misses, exceeds its occurrence, or its translation is unavailable. Purpose: show each correction once and remove marks on restore.
+test('UnitT05_勘誤標示與獨立區塊及還原', () => {
+ const {displayFixture}=require('../helpers/source-data-display.cjs');
+ for (const mode of ['match','missing','range','null']) {
+  const data=displayFixture(), item=data.skills.items[0];
+  item.errata=[{locale:'zh',official:'中文',corrected:'修正',valueRef:'/x',anchor:{field:'official',locale:'zh',text:mode==='missing'?'不存在':'中文',occurrence:mode==='range'?2:1}}];
+  if(mode==='null') item.official.zh=null;
+  const model=p.buildSkillViewModels(snapshot(data))[0], document=createDocument(), dom=a.createDomAdapter({document});
+  const parent=document.createElement('main'), anchor=document.createElement('div'), nameElement=document.createElement('div'), descriptionElement=document.createElement('div');
+  nameElement.textContent=model.nativeName;
+  for(const [i,paragraph] of model.nativeDescription.split('\n\n').entries()) { if(i) descriptionElement.append(document.createElement('br'),document.createElement('br')); descriptionElement.append(document.createTextNode(paragraph)); }
+  anchor.append(nameElement,descriptionElement); parent.append(anchor);
+  const record=dom.applySkill({anchor,nameElement,descriptionElement,detail:true,identityKey:'x'},model);
+  assert.equal(descendants(parent,n=>n.tagName==='MARK').length,mode==='match'?1:0);
+  assert.equal(record.details.textContent.includes('中文 → 修正'),mode!=='match');
+  assert.equal(dom.observe({nameElement,descriptionElement,detail:true},record).description,model.nativeDescription);
+  dom.restore(record); assert.equal(descendants(parent,n=>n.tagName==='MARK').length,0); assert.equal(descriptionElement.textContent,model.nativeDescription.replaceAll('\n',''));
+ }
+});
 // Scenario: schema 1.0.0 has no curve/combo data, then a future projection is injected. Purpose: never fabricate curves, preserve future node rendering and literal text.
 test('UnitT10_武器區塊null隱藏與非空投影渲染', () => {
   const document = createDocument(), [family] = p.buildWeaponFamilyViewModels(snapshot()), mark = family.marks[0];
@@ -19,7 +38,7 @@ test('UnitT20_祝福原文五節勘誤與完整階級表', () => {
   const document = createDocument(), models = p.buildBlessingViewModels(snapshot());
   const reader = a.createDomAdapter({ document }).createBlessingReader(models);
   const select = descendants(reader.element, n => n.tagName === 'SELECT')[0]; select.value = '0'; select.fire('change');
-  assert.match(reader.element.textContent, /祝福原文。/); assert.match(reader.element.textContent, /等級 × 數值/);
+  assert.match(reader.element.textContent, /祝福原文（勘誤：修正）。/); assert.equal(descendants(reader.element,n=>n.tagName==='MARK').length,1); assert.match(reader.element.textContent, /等級 × 數值/);
   for (const tier of [1, 2, 3, 4]) assert.match(reader.element.textContent, new RegExp('LV' + tier));
   assert.match(reader.element.textContent, /原始碼未公開/); assert.match(reader.element.textContent, /適用武器：範例劍／Mk I、範例劍／Mk II/);
   const detail = a.makeDetails(document, p.buildSkillViewModels(snapshot())[0]);

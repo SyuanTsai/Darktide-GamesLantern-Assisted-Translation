@@ -26,7 +26,7 @@ worker 先以受保護訊息傳送 identity、整組 digest、currentBytes 與�
 
 `projectWeaponCurves(item)` 與 `projectWeaponAttackCombos(item)` 已接上 1.1.0 曲線與連段；1.0.0 回傳 null，unknown 或不完整資料不顯示。DOM 只接受非空陣列：曲線形狀為 `[{label,inputUnit,outputUnit,knots:[{input,output}]}]`，保留「來源曲線節點：輸入 X，輸出 Y」文字；連段形狀為 `[{label,steps:[{label,kind}]}]`。null／空陣列完全隱藏區塊，不以 bars min/max 推算曲線。
 
-勘誤只顯示 `locale === 'zh'`，在獨立「勘誤」區塊保留 official、corrected 與 valueRef。`locateErratum(text, erratum)` 固定回 null，待 WP3 提供精確子字串與出現次序欄位後接入，目前不搜尋字串或猜測定位。所有資料以 `textContent`／文字節點輸出；切回原文、patch label 改變、四欄 identity 任一變更或原生 slot 身分變更時，保留既有還原及停止機制。
+勘誤只顯示 `locale === 'zh'`。選填的 `anchor` 指定 official 或 name、語系、精確文字及由 1 起算的出現次序；定位逐字區分大小寫，按不重疊方式搜尋，不做正規化。可定位且中文欄位有顯示時，在文字中標示並附上修正內容；定位失敗或無法覆寫時，顯示於獨立「勘誤」區塊。所有資料以 `textContent`／文字節點輸出；切回原文、patch label 改變、四欄 identity 任一變更或原生 slot 身分變更時，保留既有還原及停止機制。
 
 ## 驗證與歷史測試
 

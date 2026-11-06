@@ -24,6 +24,7 @@ function displayFixture() {
   const blessing = data.blessings.items[0];
   blessing.name = {en:'Example Blessing',zh:'範例祝福',origin:'official'};
   blessing.official = {en:'Blessing description.',zh:'祝福原文。'};
+  blessing.errata.push({locale:'zh',official:'原文',corrected:'修正',valueRef:'/values/params/bonus',anchor:{field:'official',locale:'zh',text:'原文',occurrence:1}});
   blessing.values.weapons = [weapon.id,mark2.id];
   blessing.values.tiers = [1,2,3,4].map(tier=>({tier,params:{bonus:{value:tier,unit:'percent'},hidden:{value:null,unknown:'NOT_EXPOSED_BY_SOURCE'}}}));
   weapon.values.blessings = mark2.values.blessings = [blessing.id];

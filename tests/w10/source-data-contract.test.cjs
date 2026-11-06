@@ -3,6 +3,20 @@ const assert = require('node:assert/strict');
 const { fixture } = require('../helpers/source-data-fixture.cjs');
 const contract = require('../../extension/shared/source-data-contract.js');
 
+// Scenario: optional anchors are supplied in a 1.x snapshot. Purpose: enforce the upstream anchor contract and safety policy.
+test('UnitT05_驗證勘誤定位欄位', () => {
+  for (const anchor of [undefined, { field: 'official', locale: 'zh', text: '文字', occurrence: 1 }]) {
+    const { current, ...documents } = fixture();
+    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', ...(anchor ? { anchor } : {}) }];
+    assert.doesNotThrow(() => contract.validateSnapshot({ current, documents }));
+  }
+  for (const change of [{extra: 1}, {field: 'bad'}, {locale: 'ja'}, {text: ''}, {occurrence: 0}, {occurrence: 1.5}, {text: '<script>'}]) {
+    const { current, ...documents } = fixture();
+    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', anchor: { field: 'official', locale: 'zh', text: '文字', occurrence: 1, ...change } }];
+    assert.throws(() => contract.validateSnapshot({ current, documents }), { code: 'SOURCE_DATA_INVALID' });
+  }
+});
+
 // Scenario: validate the upstream examples with supported version lengths.
 // Purpose: preserve the source-data contract without a hard-coded game version.
 test('UnitT10_接受完整快照與不同版本長度', () => {
