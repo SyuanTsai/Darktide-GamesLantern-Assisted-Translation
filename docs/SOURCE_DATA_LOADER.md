@@ -24,7 +24,7 @@ worker 先以受保護訊息傳送 identity、整組 digest、currentBytes 與�
 
 祝福閱讀器顯示 `official.zh` 原文、說明五節與「等級 × 數值」表，不產生舊的每級文案。表格依 `values.tiers[].tier` 及各級 params 顯示；unknown 一律為「原始碼未公開」。適用武器列出關聯的武器名稱與 mark。武器按 family 分組，可切換 mark，顯示名稱、官方描述、五節說明、`values.bars[]` 各 stat 的 min～max、`values.actions[]`，以及由 `values.blessings[]` 連到的祝福名稱。
 
-`projectWeaponCurves(item)` 與 `projectWeaponAttackCombos(item)` 已接上 1.1.0 曲線與連段；1.0.0 回傳 null，unknown 或不完整資料不顯示。DOM 只接受非空陣列：曲線形狀為 `[{label,inputUnit,outputUnit,knots:[{input,output}]}]`，保留「來源曲線節點：輸入 X，輸出 Y」文字；連段形狀為 `[{label,steps:[{label,kind}]}]`。null／空陣列完全隱藏區塊，不以 bars min/max 推算曲線。
+`projectWeaponCurves(item)` 與 `projectWeaponAttackCombos(item)` 已接上 1.1.0 曲線與連段；1.0.0 回傳 null，unknown 曲線或連段顯示「無法取得」，空步驟連段及不可畫的曲線不顯示。DOM 只接受非空陣列：曲線形狀為 `[{label,inputUnit,outputUnit,knots:[{input,output}]}]`，保留「來源曲線節點：輸入 X，輸出 Y」文字；連段形狀為 `[{label,steps:[{label,kind}]}]`。null／空陣列完全隱藏區塊，不以 bars min/max 推算曲線。
 
 勘誤只顯示 `locale === 'zh'`。選填的 `anchor` 指定 official 或 name、語系、精確文字及由 1 起算的出現次序；其語系必須等於該筆勘誤的 `locale`。定位在 `item[field][locale]` 中逐字搜尋、區分大小寫且不做正規化；允許重疊計數，每次找到後從該次起點的下一個字元繼續搜尋。可定位且中文欄位有顯示時，在文字中標示並附上修正內容；定位失敗或無法覆寫時，顯示於獨立「勘誤」區塊。所有資料以 `textContent`／文字節點輸出；切回原文、patch label 改變、四欄 identity 任一變更或原生 slot 身分變更時，保留既有還原及停止機制。
 
@@ -37,3 +37,5 @@ worker 先以受保護訊息傳送 identity、整組 digest、currentBytes 與�
 ## Schema 版本相容性
 
 接受 major 為 1 的三段版本，current 與四檔版本及其餘 identity 必須一致；其他 major 拒絕並保留原文。1.0.0 不允許曲線、連段及 curveId；1.1.0 起要求這些欄位並驗證參照。其他 1.x 版本號可接受，但不認得的欄位仍嚴格拒絕，不能保證未來 schema 相容。
+
+1.1.0 曲線及連段驗證依 WP2b `8391c32` 的 schema 與範例：曲線包含 `stat`、`name`、`input`、`outputUnit` 和 `source`，而曲線 ID 不要求特定字串組成。每個 stat 的 curveId 與曲線一對一對應且 bar 相符。WP2b 合併後需再次核對。

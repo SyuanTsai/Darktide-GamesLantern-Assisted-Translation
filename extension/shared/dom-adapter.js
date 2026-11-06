@@ -474,11 +474,11 @@
       addSection(content, '動作', (mark.actions || []).map(a => (a.name.zh || a.name.en || a.id) + '（' + a.slot + '／' + a.type + '）'));
       addSection(content, '可用祝福', (mark.blessings || []).map(b => b.name));
       if (Array.isArray(mark.curves) && mark.curves.length) {
-        addSection(content, '屬性曲線', mark.curves.flatMap(curve => [curve.label, ...curve.knots.map(k =>
+        addSection(content, '屬性曲線', mark.curves.flatMap(curve => curve.unavailable ? [curve.label + '：無法取得'] : [curve.label, ...curve.knots.map(k =>
           '來源曲線節點：輸入 ' + valueWithUnit(k.input, curve.inputUnit) + '，輸出 ' + valueWithUnit(k.output, curve.outputUnit))]));
       }
       if (Array.isArray(mark.attackCombos) && mark.attackCombos.length) {
-        addSection(content, '攻擊組合', mark.attackCombos.map(combo => combo.label + '：' + combo.steps.map(step => step.label + '（' + step.kind + '）').join(' → ')));
+        addSection(content, '攻擊組合', mark.attackCombos.map(combo => combo.label + '：' + (combo.unavailable ? '無法取得' : combo.steps.map(step => step.label + '（' + step.kind + '）').join(' → '))));
       }
     }
     for (const mark of family.marks) {

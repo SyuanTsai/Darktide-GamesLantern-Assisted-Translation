@@ -101,35 +101,30 @@
       array(v.bars, b => { object(b, ['id', 'name', 'stats']); string(b.id); bilingual(b.name);
         array(b.stats, s => { object(s, ['key', 'name', 'min', 'max', ...(modern ? ['curveId'] : [])]); if (modern) string(s.curveId); string(s.key); bilingual(s.name); ['min', 'max'].forEach(k => check(typeof s[k] === 'number' && Number.isFinite(s[k]), 'stat')); }); });
       if (modern) {
-        // 待 WP2b schema 定案後收緊原因碼與名稱內容；目前依規格檢查型別與固定欄位。
-        const location = x => { object(x, ['path', 'line']); string(x.path); integer(x.line, 1); };
+        const reasons = ['LERP_T_OUT_OF_RANGE','NONLINEAR_COMBINATION','NONLINEAR_LERP','CONDITIONAL_CHAIN','CHAIN_TARGET_NOT_FOUND','CHAIN_START_AMBIGUOUS','CHAIN_CYCLE_WITHOUT_ATTACK','DYNAMIC_VALUE','REFERENCE_NOT_FOUND','DAMAGE_PROFILE_BINDING_NOT_FOUND'];
+        const location = x => { object(x, ['path', 'line']); string(x.path, null, 1); integer(x.line, 1); };
         const number = x => check(typeof x === 'number' && Number.isFinite(x), 'number');
         array(v.curves, c => {
           object(c, ['id','bar','stat','name','input','interpolation','knots','outputUnit','unknown','source']);
           ['id','bar','stat'].forEach(k => string(c[k])); bilingual(c.name);
           object(c.input, ['source','unit','min','max']); check(c.input.source === 'base_stat_value' && c.input.unit === 'ratio' && c.input.min === 0 && c.input.max === 1, 'curve input');
-          enumeration(c.interpolation, ['linear','unknown']); nullable(c.outputUnit); nullable(c.unknown); location(c.source);
+          enumeration(c.interpolation, ['linear','unknown']); nullable(c.outputUnit); enumeration(c.unknown, [null, ...reasons]); location(c.source);
           array(c.knots, k => { object(k, ['input','output']); number(k.input); if (Array.isArray(k.output)) k.output.forEach(number); else if (k.output !== null) number(k.output); });
-          check(c.knots.length === 2 && c.knots[0].input === 0 && c.knots[1].input === 1, 'curve knots');
-          if (c.interpolation === 'unknown' || c.knots.some(k => k.output === null)) check(c.unknown !== null, 'curve unknown');
-          if (c.knots.every(k => k.output !== null)) {
-            check(Array.isArray(c.knots[0].output) === Array.isArray(c.knots[1].output), 'curve output types');
-            if (Array.isArray(c.knots[0].output)) check(c.knots[0].output.length === c.knots[1].output.length, 'curve array lengths');
-          }
+          check(c.knots.length === 2 && c.knots.every(k => k.input === 0 || k.input === 1), 'curve knots');
+          if (c.interpolation === 'unknown') check(c.unknown !== null && c.knots.every(k => k.output === null), 'curve unknown');
+          if (c.unknown === null) check(c.interpolation === 'linear' && c.knots.every(k => k.output !== null), 'curve known');
         });
         check(new Set(v.curves.map(c => c.id)).size === v.curves.length, 'curve ids');
         const stats = v.bars.flatMap(b => b.stats.map(stat => ({ bar: b.id, stat })));
         for (const c of v.curves) {
-          check(c.id === c.bar + '.' + c.stat, 'curve id');
-          check(stats.filter(x => x.stat.curveId === c.id && x.bar === c.bar && x.stat.key === c.stat).length === 1, 'curve reference');
+          check(stats.filter(x => x.stat.curveId === c.id && x.bar === c.bar).length === 1, 'curve reference');
         }
-        for (const { bar, stat } of stats) check(v.curves.filter(c => c.id === stat.curveId && c.bar === bar && c.stat === stat.key).length === 1, 'stat reference');
+        for (const { bar, stat } of stats) check(v.curves.filter(c => c.id === stat.curveId && c.bar === bar).length === 1, 'stat reference');
         array(v.attackCombos, c => {
-          object(c, ['id','kind','start','steps','loopsTo','unknown','source']); string(c.id); enumeration(c.kind, ['light','heavy']); string(c.start); nullable(c.unknown); location(c.source);
-          array(c.steps, step => { object(step, ['action','input','name','damageProfile','damageProfileUnknown']); string(step.action); string(step.input); bilingual(step.name); nullable(step.damageProfile); nullable(step.damageProfileUnknown); });
-          if (c.loopsTo !== null) integer(c.loopsTo, 0, c.steps.length - 1);
+          object(c, ['id','kind','start','steps','loopsTo','unknown','source']); string(c.id); enumeration(c.kind, ['light','heavy']); string(c.start); enumeration(c.unknown, [null, ...reasons]); location(c.source);
+          array(c.steps, step => { object(step, ['action','input','name','damageProfile','damageProfileUnknown']); string(step.action); string(step.input); bilingual(step.name); nullable(step.damageProfile); enumeration(step.damageProfileUnknown, [null, ...reasons]); check(step.damageProfile === null ? step.damageProfileUnknown !== null : step.damageProfileUnknown === null, 'damage profile unknown'); });
+          if (c.loopsTo !== null) integer(c.loopsTo, 0);
         });
-        check(new Set(v.attackCombos.map(c => c.id)).size === v.attackCombos.length, 'combo ids');
       }
     } else if (category === 'blessings') {
       object(v, ['weapons', 'tiers', 'params']); array(v.weapons, x => string(x, ref('weapon')), { unique: true, min: 1 });

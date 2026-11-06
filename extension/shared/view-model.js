@@ -43,13 +43,18 @@
   }
 
   function projectWeaponCurves(item) {
-    const curves = (item.values.curves || []).filter(c => c.interpolation !== 'unknown' && !c.unknown && c.knots.length === 2 && c.knots.every(k => k.output !== null && (!Array.isArray(k.output) || k.output.length > 0)));
-    const result = curves.map(c => { const stat = item.values.bars.flatMap(b => b.stats).find(s => s.curveId === c.id); return { label: stat?.name.zh || stat?.name.en || '', inputUnit: c.input.unit, outputUnit: c.outputUnit || '', knots: c.knots }; });
+    const result = (item.values.curves || []).flatMap(c => {
+      const stat = item.values.bars.flatMap(b => b.stats).find(s => s.curveId === c.id);
+      const label = stat?.name.zh || stat?.name.en || '';
+      if (c.interpolation === 'unknown') return [{ label, unavailable: true }];
+      if (!c.knots.every(k => k.output !== null && (!Array.isArray(k.output) || k.output.length > 0))) return [];
+      return [{ label, knots: c.knots, inputUnit: c.input.unit, outputUnit: c.outputUnit || '' }];
+    });
     return result.length ? result : null;
   }
 
   function projectWeaponAttackCombos(item) {
-    const result = (item.values.attackCombos || []).filter(c => !c.unknown && c.steps.length > 0).map(c => ({ label: c.kind === 'light' ? '輕擊連段' : '重擊連段', steps: c.steps.map(s => ({ label: s.name.zh || s.name.en || '', kind: c.kind })) }));
+    const result = (item.values.attackCombos || []).filter(c => c.steps.length > 0).map(c => { const label = c.kind === 'light' ? '輕擊連段' : '重擊連段'; return c.unknown ? { label, unavailable: true } : { label, steps: c.steps.map(s => ({ label: s.name.zh || s.name.en || '', kind: c.kind })) }; });
     return result.length ? result : null;
   }
 
