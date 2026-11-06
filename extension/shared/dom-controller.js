@@ -72,9 +72,21 @@
       try { onStatus(Object.freeze({ ...state })); } catch (_) { /* UI status listeners are optional. */ }
     }
 
+    function mutatePresentation(action) {
+      if (!observer) return action();
+      const pending = observer.takeRecords();
+      try { return action(); } finally {
+        observer.takeRecords();
+        if (pending.some((mutation) => !isOwnedChange(mutation))) {
+          refreshPatchObserver();
+          void scan();
+        }
+      }
+    }
+
     function restoreAll() {
       for (const [anchor, record] of records) {
-        dom.restore(record);
+        mutatePresentation(() => dom.restore(record));
         records.delete(anchor);
       }
     }
@@ -168,7 +180,7 @@
           !change.node.isConnected || change.node.nodeValue !== change.writtenValue);
         if (!entry || identityChanged || changed || !sourceStillMatches) {
           if (identityChanged) blockedSlots.set(anchor, record.identityKey);
-          dom.restore(record);
+          mutatePresentation(() => dom.restore(record));
           records.delete(anchor);
         }
       }
@@ -259,7 +271,7 @@
           const observation = dom.observe(entry.slot);
           const matches = presentationApi.findMatchingModels(models, observation, presentationApi.matchesSkillObservation);
           if (matches.length === 1) {
-            record = dom.applySkill(entry.slot, matches[0]);
+            record = mutatePresentation(() => dom.applySkill(entry.slot, matches[0]));
             if (record) { record.kind = 'skill'; record.model = matches[0]; }
           }
         } else {
@@ -269,7 +281,7 @@
             presentationApi.matchesWeaponObservation);
           const matches = candidates.filter(row => matchingMarks.includes(row.mark));
           if (matches.length === 1) {
-            record = dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark, matches[0].family.marks);
+            record = mutatePresentation(() => dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark, matches[0].family.marks));
             if (record) { record.kind = 'weapon'; record.mark = matches[0].mark; }
           }
         }

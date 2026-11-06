@@ -138,7 +138,7 @@
       && names[0].parentElement === descriptions[0].parentElement;
   }
 
-  function hasKnownAbilityTooltipShape(tooltip) {
+  function hasKnownAbilityTooltipShape(tooltip, isOwned = () => false) {
     if (!tooltip || protectedElement(tooltip)) return null;
     const isBuildTooltip = tooltip.matches('div.fixed.max-w-sm.w-full.pointer-events-none')
       && !!tooltip.closest('#darktide-build-editor');
@@ -149,29 +149,29 @@
     if (names.length !== 1 || descriptions.length !== 1 || names[0].nextElementSibling !== descriptions[0]
       || names[0].parentElement !== descriptions[0].parentElement
       || protectedElement(names[0]) || protectedElement(descriptions[0])
-      || textNodes(names[0]).length !== 1 || names[0].childElementCount !== 0
+      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || (names[0].children ? [...names[0].children].some(node => !isOwned(node)) : names[0].childElementCount !== 0)
       || descriptions[0].querySelector('script, style, iframe, object, embed, template')
       || !observedParagraphBreaks(descriptions[0])) return null;
     return { nameElement: names[0], descriptionElement: descriptions[0], tooltip: true };
   }
 
-  function hasKnownAbilityDetailShape(container) {
+  function hasKnownAbilityDetailShape(container, isOwned = () => false) {
     if (!container || protectedElement(container) || !container.matches('div.shadow-md.border.max-w-sm')) return null;
     const names = container.querySelectorAll('div.text-lg');
     const descriptions = container.querySelectorAll('div.font-normal.leading-5');
     if (names.length !== 1 || descriptions.length !== 1 || names[0].nextElementSibling !== descriptions[0]
       || names[0].parentElement !== descriptions[0].parentElement
       || protectedElement(names[0]) || protectedElement(descriptions[0])
-      || textNodes(names[0]).length !== 1 || names[0].childElementCount !== 0
+      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || (names[0].children ? [...names[0].children].some(node => !isOwned(node)) : names[0].childElementCount !== 0)
       || descriptions[0].querySelector('a, button, input, textarea, select, script, style, iframe, object, embed, template')
       || !observedParagraphBreaks(descriptions[0])) return null;
     for (const element of descriptions[0].querySelectorAll('*')) {
-      if (!['SPAN', 'BR'].includes(element.tagName)) return null;
+      if (!isOwned(element) && !['SPAN', 'BR'].includes(element.tagName)) return null;
     }
     return { anchor: container, nameElement: names[0], descriptionElement: descriptions[0], detail: true };
   }
 
-  function collectSkillSlots(root) {
+  function collectSkillSlots(root, isOwned = () => false) {
     if (!root || typeof root.querySelectorAll !== 'function') return [];
     const document = root.nodeType === 9 ? root : root.ownerDocument;
     const slots = [];
@@ -179,7 +179,8 @@
       if (protectedElement(anchor) || !hasKnownAbilityShape(anchor)) continue;
       const nameElement = anchor.querySelector('.font-teko');
       const descriptionElement = anchor.querySelector('.text-xs');
-      if (textNodes(nameElement).length !== 1 || nameElement.childElementCount !== 0) continue;
+      if (textNodes(nameElement).filter(node => !isOwned(node)).length !== 1
+        || [...(nameElement.children || [])].some(node => !isOwned(node))) continue;
       if (!observedParagraphBreaks(descriptionElement)) continue;
       if (descriptionElement.querySelector('script, style, iframe, object, embed, template')) continue;
       slots.push(Object.freeze({ anchor, nameElement, descriptionElement,
@@ -187,7 +188,7 @@
     }
     const tooltipSeen = new Set(slots.map((slot) => slot.nameElement));
     for (const tooltip of root.querySelectorAll('#gameslantern-tooltip, #darktide-build-editor div.fixed.max-w-sm.w-full.pointer-events-none')) {
-      const shape = hasKnownAbilityTooltipShape(tooltip);
+      const shape = hasKnownAbilityTooltipShape(tooltip, isOwned);
       if (!shape || tooltipSeen.has(shape.nameElement)) continue;
       tooltipSeen.add(shape.nameElement);
       slots.push(Object.freeze({ anchor: tooltip, ...shape,
@@ -196,7 +197,7 @@
     if (abilityDetailDocument(document)) {
       const containers = [...root.querySelectorAll('div.shadow-md.border.max-w-sm')];
       if (containers.length === 1) {
-        const detail = hasKnownAbilityDetailShape(containers[0]);
+        const detail = hasKnownAbilityDetailShape(containers[0], isOwned);
         if (detail) slots.push(Object.freeze({ ...detail,
           identityKey: skillIdentityKey(detail.anchor, document, true) }));
       }
@@ -566,6 +567,12 @@
 
   function createDomAdapter({ document = globalThis.document } = {}) {
     if (!document || typeof document.createElement !== 'function') throw new TypeError('a DOM document is required');
+    const owned = new WeakSet();
+    function isOwned(node) { return owned.has(node); }
+    function registerOwned(node) {
+      owned.add(node);
+      for (const child of node.childNodes || []) registerOwned(child);
+    }
 
     function observe(slot, record = null) {
       const overrides = recordOverrides(record);
@@ -650,7 +657,7 @@
         node.nodeValue = children.shift().nodeValue;
         change.writtenValue = node.nodeValue;
         let reference = node.nextSibling;
-        for (const child of children) { node.parentNode.insertBefore(child, reference); ownedNodes.push(child); for (const text of child.nodeType === 3 ? [child] : textNodes(child)) changes.push({ node: text, originalValue: '', writtenValue: text.nodeValue }); }
+        for (const child of children) { registerOwned(child); node.parentNode.insertBefore(child, reference); ownedNodes.push(child); for (const text of child.nodeType === 3 ? [child] : textNodes(child)) changes.push({ node: text, originalValue: '', writtenValue: text.nodeValue }); }
       }
       if (details) {
         if (slot.tooltip || slot.detail) slot.descriptionElement.parentNode.insertBefore(details, slot.descriptionElement.nextSibling);
@@ -722,7 +729,7 @@
       return readSelectedPatchLabel(root);
     }
 
-    return Object.freeze({ applySkill, applyWeapon, collectSkillSlots, collectWeaponSlots, createBlessingReader, observe, observeWeapon, restore, selectedPatchLabel,
+    return Object.freeze({ applySkill, applyWeapon, collectSkillSlots: root => collectSkillSlots(root, isOwned), collectWeaponSlots, createBlessingReader, observe, observeWeapon, restore, selectedPatchLabel,
       patchSelectionRegion: (root = document) => patchSelectionRegion(root) });
   }
 

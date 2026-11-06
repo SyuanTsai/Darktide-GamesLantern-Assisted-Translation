@@ -39,3 +39,28 @@ test('UnitT30_不匹配保留原文且停用會還原', async () => {
   await enabled.controller.setEnabled(true); assert.equal(enabled.applied, 2); enabled.slot.identityKey = 'reused'; await enabled.controller.scan();
   assert.equal(enabled.restored, 2); assert.equal(enabled.applied, 2); enabled.controller.dispose();
 });
+
+// Scenario: an actual adapter and controller rescan marked detail text and then see an unexpected site element. Purpose: retain owned marks while rejecting changed source structure.
+test('InterT05_實際控制器重掃勘誤與結構變更', async () => {
+ const {displayFixture}=require('../helpers/source-data-display.cjs');
+ const {createDocument,descendants}=require('../helpers/display-dom.cjs');
+ const {createDomAdapter}=require('../../extension/shared/dom-adapter.js');
+ for(const field of ['name','official']) {
+  const data=displayFixture(), text=field==='name'?'範例':'中文';
+  data.skills.items[0].errata=[{locale:'zh',official:text,corrected:'修正',valueRef:'/values/params/bonus',anchor:{field,locale:'zh',text,occurrence:1}}];
+  const s=snapshot(data), document=createDocument(); document.nodeType=9; document.location={href:'https://darktide.gameslantern.com/abilities/example',pathname:'/abilities/example'};
+  document.defaultView.addEventListener=()=>{}; document.defaultView.removeEventListener=()=>{};
+  const container=document.createElement('div'), name=document.createElement('div'), description=document.createElement('div');
+  container.matches=selector=>selector==='div.shadow-md.border.max-w-sm'; name.textContent='Example';
+  for(const [i,part] of data.skills.items[0].official.en.split('\n\n').entries()){if(i)description.append(document.createElement('br'),document.createElement('br'));description.append(document.createTextNode(part));}
+  container.append(name,description); Object.defineProperty(name,'nextElementSibling',{get:()=>description});
+  container.querySelectorAll=selector=>selector==='div.text-lg'?[name]:selector==='div.font-normal.leading-5'?[description]:[];
+  description.querySelectorAll=selector=>selector==='br'?descendants(description,n=>n.tagName==='BR'):selector==='*'?descendants(description,n=>n.nodeType===1):[];
+  document.querySelectorAll=selector=>selector==='div.shadow-md.border.max-w-sm'?[container]:[];
+  const actual=createDomAdapter({document}), adapter={...actual,collectWeaponSlots:()=>[],selectedPatchLabel:()=>({status:'absent'})};
+  const controller=createDomController({document,adapter,getNativeSnapshotBytes:()=>new Uint8Array([1]),identityResolver:{resolve:async()=>({status:'verified',identity:s.identity})},client:{initialize:async()=>({status:'ready',snapshot:s,identity:s.identity})}});
+  await controller.start(); for(let i=0;i<4;i++){await controller.scan();assert.equal(controller.getState().status,'ready');assert.equal(descendants(container,n=>n.tagName==='MARK').length,1);}
+  name.append(document.createElement('em')); await controller.scan(); assert.equal(controller.getState().status,'original'); assert.equal(descendants(container,n=>n.tagName==='MARK').length,0);
+  await controller.setEnabled(false); assert.equal(descendants(container,n=>n.tagName==='MARK').length,0); controller.dispose();
+ }
+});
