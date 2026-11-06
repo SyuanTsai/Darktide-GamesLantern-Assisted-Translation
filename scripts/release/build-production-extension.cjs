@@ -4,19 +4,15 @@ const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { webcrypto } = require('node:crypto');
-const contract = require('../../extension/shared/contract.js');
 const productionDataset = require('../../extension/shared/production-dataset.js');
-const { BASELINE_PINS, ensureW15Baseline } = require('./release-baseline.cjs');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const PRODUCTION_ORIGIN = 'https://darktide.tw-syuan.com';
 const ICON_DIR = path.join(REPOSITORY_ROOT, 'extension', 'icons');
 const ZIP_SCRIPT = path.join(__dirname, 'package-zip.ps1');
-const CORE_KINDS = Object.freeze(['skills', 'blessings', 'weapons', 'terms']);
 const SHARED_FILES = Object.freeze([
-  'contract.js', 'domains.js', 'loader.js', 'snapshot-store.js', 'update-coordinator.js',
-  'document-session.js', 'baseline-provider.js', 'client.js', 'service-worker.js',
+  'source-data-contract.js', 'loader.js', 'snapshot-store.js', 'update-coordinator.js',
+  'document-session.js', 'client.js', 'service-worker.js',
   'native-identity.js', 'view-model.js', 'presentation.js', 'production-dataset.js', 'dom-adapter.js',
   'dom-controller.js', 'content-entry.js', 'display.css'
 ]);
@@ -90,27 +86,6 @@ function filesUnder(directory) {
   return result.sort();
 }
 
-function readPinnedFiles(directory, expected, label) {
-  const root = requirePlainDirectory(directory, label);
-  const actual = filesUnder(root);
-  const expectedPaths = Object.keys(expected).sort();
-  if (actual.length !== expectedPaths.length || actual.some((file, index) => file !== expectedPaths[index])) {
-    throw new Error(label + ' file set differs from the exact W15 release baseline pins');
-  }
-  const result = new Map();
-  for (const relative of expectedPaths) {
-    const filePath = path.join(root, ...relative.split('/'));
-    const raw = fs.readFileSync(requireRegularFile(filePath, label + ' ' + relative));
-    const pin = expected[relative];
-    const hash = sha256(raw);
-    if (raw.byteLength !== pin.sizeBytes || hash !== pin.sha256) {
-      throw new Error(label + ' ' + relative + ' size or SHA-256 differs from the W15 pinned bytes');
-    }
-    result.set(relative, { raw, sizeBytes: raw.byteLength, sha256: hash });
-  }
-  return result;
-}
-
 function readPngSize(raw, label) {
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   if (raw.length < 24 || !raw.subarray(0, 8).equals(signature) || raw.toString('ascii', 12, 16) !== 'IHDR') {
@@ -155,47 +130,11 @@ function validateVersion(version) {
   return version;
 }
 
-async function readBaseline(directory) {
-  const files = readPinnedFiles(directory, BASELINE_PINS, 'W15 production baseline');
-  const versionBytes = files.get('version.json').raw;
-  const manifestBytes = files.get('manifest.json').raw;
-  const version = readUtf8Json(versionBytes, 'W15 version.json');
-  const manifest = readUtf8Json(manifestBytes, 'W15 manifest.json');
-  contract.validateVersion(version);
-  await contract.validateManifest(manifest, { cryptoApi: webcrypto });
-  const release = contract.selectGameRelease(version, W15.gameVersion);
-  if (!release || release.content_version !== W15.contentVersion || release.data_revision !== W15.dataRevision
-    || release.manifest_sha256 !== W15.manifestSha256 || manifest.gameVersion !== W15.gameVersion
-    || manifest.contentVersion !== W15.contentVersion || manifest.dataRevision !== W15.dataRevision
-    || sha256(manifestBytes) !== W15.manifestSha256) {
-    throw new Error('W15 baseline identity or current release pointer differs from the fixed production pins');
-  }
-  const selected = await contract.selectConsumerFiles(manifest, {
-    requiredKinds: [...CORE_KINDS], supportedKinds: [...CORE_KINDS], cryptoApi: webcrypto
-  });
-  const paths = selected.map((file) => file.path).sort();
-  const expectedPaths = CORE_KINDS.map((kind) => 'domains/' + kind + '.json').sort();
-  if (paths.length !== expectedPaths.length || paths.some((file, index) => file !== expectedPaths[index])) {
-    throw new Error('W15 baseline core-domain dependency closure is not exactly the four supported files');
-  }
-  for (const file of selected) {
-    const raw = files.get(file.path).raw;
-    if (raw.byteLength !== file.sizeBytes || sha256(raw) !== file.sha256) {
-      throw new Error('W15 baseline core domain differs from the shared manifest: ' + file.path);
-    }
-  }
-  return { files, version, manifest };
-}
-
-function buildDatasetPin(manifest, manifestSha256) {
-  return productionDataset.normalizePin({
-    schema: 'w16-production-dataset-pin/1',
-    gameVersion: manifest.gameVersion,
-    gameReleaseId: manifest.gameReleaseId,
-    contentVersion: manifest.contentVersion,
-    dataRevision: manifest.dataRevision,
-    manifestSha256
-  });
+// Display-only W16 pin remains until spec2; it never selects or validates W10 data.
+function buildDatasetPin() {
+  return productionDataset.normalizePin({ schema: 'w16-production-dataset-pin/1',
+    gameVersion: W15.gameVersion, gameReleaseId: 'darktide:1.13.2', contentVersion: W15.contentVersion,
+    dataRevision: W15.dataRevision, manifestSha256: W15.manifestSha256 });
 }
 
 function datasetPinScript(pin) {
@@ -216,7 +155,7 @@ function buildManifest(version) {
     content_scripts: [{
       matches: [...CONTENT_MATCHES],
       js: [
-        'shared/contract.js', 'shared/domains.js', 'shared/loader.js',
+        'shared/source-data-contract.js', 'shared/loader.js',
         'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
         'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
         'shared/dom-controller.js', 'shared/production-dataset-pin.js', 'shared/content-entry.js'
@@ -262,7 +201,7 @@ function validateOutputDirectory(directory) {
 
 function createZip(packageDirectory, archivePath) {
   if (process.platform !== 'win32') throw new Error('production ZIP packaging is supported on the Windows build host only');
-  const result = spawnSync('powershell.exe', [
+  const result = spawnSync('pwsh', [
     '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', ZIP_SCRIPT,
     '-SourceDirectory', packageDirectory, '-DestinationPath', archivePath
   ], { encoding: 'utf8', windowsHide: true, maxBuffer: 4 * 1024 * 1024 });
@@ -273,17 +212,15 @@ function createZip(packageDirectory, archivePath) {
 
 async function buildProductionExtensionPackage(options = {}) {
   if (!options || typeof options !== 'object' || Array.isArray(options)
-    || Object.keys(options).some((key) => !['version', 'baselineDir', 'iconDir', 'outputDir'].includes(key))) {
-    throw new TypeError('production package accepts only version, baselineDir, iconDir, and outputDir');
+    || Object.keys(options).some((key) => !['version', 'iconDir', 'outputDir'].includes(key))) {
+    throw new TypeError('production package accepts only version, iconDir, and outputDir');
   }
   const version = validateVersion(options.version);
   const outputDirectory = validateOutputDirectory(options.outputDir);
-  const baselineDirectory = options.baselineDir === undefined ? await ensureW15Baseline() : path.resolve(options.baselineDir);
   const iconDirectory = options.iconDir === undefined ? ICON_DIR : path.resolve(options.iconDir);
-  const baseline = await readBaseline(baselineDirectory);
   const icons = readIcons(iconDirectory);
   const manifest = buildManifest(version);
-  const datasetPin = buildDatasetPin(baseline.manifest, baseline.files.get('manifest.json').sha256);
+  const datasetPin = buildDatasetPin();
   const packageDirectory = path.join(outputDirectory, 'unpacked');
   const archiveName = 'darktide-gameslantern-zh-tw-' + version + '.zip';
   const archivePath = path.join(outputDirectory, archiveName);
@@ -297,11 +234,6 @@ async function buildProductionExtensionPackage(options = {}) {
   }
   writeNew(path.join(packageDirectory, 'shared', 'production-dataset-pin.js'),
     Buffer.from(datasetPinScript(datasetPin), 'utf8'));
-  for (const relative of Object.keys(BASELINE_PINS)) {
-    const targetRelative = relative === 'version.json' || relative === 'manifest.json'
-      ? 'baseline/' + relative : 'baseline/' + relative;
-    copyRaw(baseline.files.get(relative).raw, path.join(packageDirectory, ...targetRelative.split('/')));
-  }
   for (const relative of ['icon16.png', 'icon32.png', 'icon48.png', 'icon128.png']) {
     copyRaw(icons.get(relative).raw, path.join(packageDirectory, 'icons', relative));
   }
@@ -317,12 +249,7 @@ async function buildProductionExtensionPackage(options = {}) {
     schema: 'w16-extension-package/1',
     extensionVersion: version,
     productionOrigin: PRODUCTION_ORIGIN,
-    gameVersion: W15.gameVersion,
-    contentVersion: W15.contentVersion,
-    buildId: W15.buildId,
-    dataRevision: W15.dataRevision,
-    sharedManifestSha256: W15.manifestSha256,
-    baselineFiles: Object.keys(BASELINE_PINS).map((file) => ({ path: file, ...BASELINE_PINS[file] })),
+    displayDatasetPin: datasetPin, // spec2 前保留的顯示層 pin，不代表 W10 資料來源。
     iconAssets: Object.keys(ICON_PINS).map((file) => ({ path: file, sha256: ICON_PINS[file] })),
     packageFiles,
     archive: { fileName: archiveName, sizeBytes: archiveBytes.byteLength, sha256: sha256(archiveBytes) }
@@ -357,7 +284,6 @@ if (require.main === module) {
     buildProductionExtensionPackage(options).then((result) => {
       process.stdout.write(JSON.stringify({
         extensionVersion: result.receipt.extensionVersion,
-        contentVersion: result.receipt.contentVersion,
         packageDirectory: result.packageDirectory,
         archivePath: result.archivePath,
         archiveSha256: result.receipt.archive.sha256
@@ -370,7 +296,6 @@ if (require.main === module) {
 }
 
 module.exports = {
-  BASELINE_PINS,
   CONTENT_MATCHES,
   ICON_PINS,
   PRODUCTION_ORIGIN,

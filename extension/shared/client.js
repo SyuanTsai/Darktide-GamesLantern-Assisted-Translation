@@ -10,10 +10,6 @@
   'use strict';
 
   const MESSAGE_TYPE = 'W10_GET_SNAPSHOT';
-  const GAME_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
-  const GAME_RELEASE_ID = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
-  const SNAPSHOT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
-
   function getStatusText(result) {
     if (result && result.status === 'ready') {
       if (result.source === 'active') {
@@ -22,7 +18,6 @@
         return '已載入相容且已驗證的資料。';
       }
       if (result.source === 'previous') return '更新未完成，暫用上一份已驗證且相容的資料。';
-      if (result.source === 'baseline') return '使用隨附且已驗證的基礎資料。';
     }
     const reason = result && (result.reason || result.updateStatus);
     const messages = {
@@ -46,27 +41,8 @@
       identity: identity || null, updateStatus, statusText: getStatusText({ status: 'original', reason, updateStatus }) });
   }
 
-  function normalizeIdentity(identity) {
-    if (!identity || typeof identity !== 'object' || Array.isArray(identity)
-      || Object.keys(identity).some((key) => !['gameVersion', 'gameReleaseId', 'snapshotId'].includes(key))
-      || typeof identity.gameVersion !== 'string' || !GAME_VERSION.test(identity.gameVersion)
-      || typeof identity.gameReleaseId !== 'string' || !GAME_RELEASE_ID.test(identity.gameReleaseId)
-      || (identity.snapshotId !== undefined
-        && (typeof identity.snapshotId !== 'string' || !SNAPSHOT_ID.test(identity.snapshotId)))) return null;
-    return Object.freeze({
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
-      ...(identity.snapshotId === undefined ? {} : { snapshotId: identity.snapshotId })
-    });
-  }
-
-  function sameIdentity(left, right) {
-    return !!left && !!right && left.gameVersion === right.gameVersion
-      && left.gameReleaseId === right.gameReleaseId && left.snapshotId === right.snapshotId;
-  }
-
   function bytesFromBase64(value) {
-    if (typeof value !== 'string' || value.length > 24 * 1024 * 1024 || value.length % 4 !== 0) {
+    if (typeof value !== 'string' || value.length > 4 * Math.ceil(loaderApi.LIMITS.fileBytes / 3) || value.length % 4 !== 0) {
       throw new Error('W10 worker returned malformed raw bytes');
     }
     let padding = 0;
@@ -92,14 +68,6 @@
     return bytes;
   }
 
-  function serializeIdentity(identity) {
-    return {
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
-      ...(identity.snapshotId === undefined ? {} : { snapshotId: identity.snapshotId })
-    };
-  }
-
   function validateOptions(options) {
     const value = options || {};
     if (!value || typeof value !== 'object' || Array.isArray(value)
@@ -112,7 +80,7 @@
   }
 
   function createW10Client({ runtime = globalThis.chrome && globalThis.chrome.runtime,
-    loader = loaderApi, documentSession = sessionApi, location = globalThis.location } = {}) {
+    loader = loaderApi, documentSession = sessionApi, cryptoApi = globalThis.crypto } = {}) {
     if (!runtime || typeof runtime.sendMessage !== 'function') throw new TypeError('chrome.runtime.sendMessage is unavailable');
     if (!loader || typeof loader.verifyStoredSnapshot !== 'function') throw new TypeError('W10 shared loader is unavailable');
     if (!documentSession || typeof documentSession.createDocumentSession !== 'function') {
@@ -120,16 +88,12 @@
     }
     let session = null;
 
-    function currentPage() {
-      return location && typeof location.pathname === 'string' ? { pathname: location.pathname } : undefined;
-    }
-
-    async function requestAndVerify(identity, options) {
+    async function requestAndVerify(options) {
+      let identity = null;
       let response;
       try {
         response = await runtime.sendMessage({
           type: MESSAGE_TYPE,
-          identity: serializeIdentity(identity),
           active: options.active,
           manual: options.manual
         });
@@ -141,36 +105,24 @@
         return original('worker-rejected', identity, typeof code === 'string' ? code : 'worker-rejected');
       }
       const result = response.result;
-      if (!sameIdentity(normalizeIdentity(result.identity), identity)) {
-        return original('worker-identity-mismatch', identity, 'worker-identity-mismatch');
-      }
       if (result.source === 'original' || result.snapshot === null) {
         return original(result.reason || 'no-compatible-data', identity, result.updateStatus || result.status || null);
       }
-      if (!['active', 'previous', 'baseline'].includes(result.source) || result.status !== 'ready') {
+      if (!['active', 'previous'].includes(result.source) || result.status !== 'ready') {
         return original('worker-result-invalid', identity, 'worker-result-invalid');
       }
       try {
         const raw = result.snapshot;
-        if (!raw || typeof raw !== 'object' || Object.keys(raw).sort().join(',') !== 'files,manifestBytes,versionBytes'
-          || !Array.isArray(raw.files) || raw.files.length > 4096) throw new Error('worker snapshot row is malformed');
-        const files = new Map();
-        let encodedFileBytes = 0;
-        for (const row of raw.files) {
-          if (!Array.isArray(row) || row.length !== 2 || typeof row[0] !== 'string' || files.has(row[0])) {
-            throw new Error('worker file row is malformed');
-          }
-          encodedFileBytes += row[1].length;
-          if (encodedFileBytes > 32 * 1024 * 1024) throw new Error('worker snapshot exceeds the message byte limit');
-          files.set(row[0], bytesFromBase64(row[1]));
-        }
-        const snapshot = await loader.verifyStoredSnapshot({
-          versionBytes: bytesFromBase64(raw.versionBytes),
-          manifestBytes: bytesFromBase64(raw.manifestBytes),
-          files,
-          identity,
-          page: currentPage()
-        });
+        if (!raw || typeof raw !== 'object' || Object.keys(raw).sort().join(',') !== 'currentBytes,files'
+          || !raw.files || Object.keys(raw.files).sort().join(',') !== [...loader.CATEGORIES].sort().join(',')) throw new Error('malformed snapshot');
+        let encodedBytes = raw.currentBytes.length;
+        for (const k of loader.CATEGORIES) encodedBytes += raw.files[k].length;
+        if (encodedBytes > 4 * Math.ceil(loader.LIMITS.snapshotBytes / 3) + 16) throw new Error('message exceeds limit');
+        if (raw.currentBytes.length > 4 * Math.ceil(loader.LIMITS.currentBytes / 3)) throw new Error('current exceeds limit');
+        const snapshot = await loader.verifyStoredSnapshot({ currentBytes: bytesFromBase64(raw.currentBytes),
+          files: Object.fromEntries(loader.CATEGORIES.map(k => [k, bytesFromBase64(raw.files[k])])), cryptoApi });
+        if (!loader.sameIdentity(result.identity, snapshot.identity)) return original('worker-identity-mismatch', null);
+        identity = snapshot.identity;
         const verified = { status: 'ready', source: result.source, snapshot, identity,
           updateStatus: result.updateStatus || null };
         return Object.freeze({ ...verified, statusText: getStatusText(verified) });
@@ -179,26 +131,14 @@
       }
     }
 
-    function initialize(trustedIdentity, rawOptions = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
-      if (!identity) return Promise.resolve(original('unknown-identity', null));
+    function initialize(rawOptions = {}) {
       const options = validateOptions(rawOptions);
-      if (!session) {
-        session = documentSession.createDocumentSession({
-          resolveSnapshot: (pinnedIdentity) => requestAndVerify(pinnedIdentity, options)
-        });
-      }
-      return session.initialize(identity).then((result) => Object.freeze({
-        ...result, statusText: getStatusText(result)
-      }));
+      if (!session) session = documentSession.createDocumentSession({ resolveSnapshot: () => requestAndVerify(options) });
+      return session.initialize().then(result => Object.freeze({ ...result, statusText: getStatusText(result) }));
     }
-
-    async function checkNow(trustedIdentity) {
-      const identity = normalizeIdentity(trustedIdentity);
-      if (!identity) return original('unknown-identity', null);
-      const result = await requestAndVerify(identity, { active: true, manual: true });
-      const summary = { status: result.status, source: result.source,
-        updateStatus: result.updateStatus, reason: result.reason || null };
+    async function checkNow() {
+      const result = await requestAndVerify({ active: true, manual: true });
+      const summary = { status: result.status, source: result.source, updateStatus: result.updateStatus, reason: result.reason || null };
       return Object.freeze({ ...summary, statusText: getStatusText(summary) });
     }
 

@@ -219,7 +219,7 @@
       && typeof productionDatasetApi.createProductionDatasetResolver === 'function'
       ? productionDatasetApi.createProductionDatasetResolver({
         pin: productionPin,
-        loadSnapshot: (identity) => rawClient.initialize(identity),
+        loadSnapshot: () => rawClient.initialize(),
         presentationApi
       })
       : identityApi.createNativeIdentityResolver({ proofs, cryptoApi: pageRoot.crypto });
@@ -339,7 +339,7 @@
 
     const client = Object.freeze({
       async initialize(identity, options) {
-        lastClientResult = await rawClient.initialize(identity, options);
+        lastClientResult = await rawClient.initialize(options);
         renderStatus(currentState);
         return lastClientResult;
       }
