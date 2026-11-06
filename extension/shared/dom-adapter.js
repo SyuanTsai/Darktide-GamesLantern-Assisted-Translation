@@ -138,6 +138,12 @@
       && names[0].parentElement === descriptions[0].parentElement;
   }
 
+  function hasUnownedNameElement(element, isOwned) {
+    for (const child of element.children || []) {
+      if (!isOwned(child) || hasUnownedNameElement(child, isOwned)) return true;
+    }
+    return !element.children && !!element.childElementCount;
+  }
   function hasKnownAbilityTooltipShape(tooltip, isOwned = () => false) {
     if (!tooltip || protectedElement(tooltip)) return null;
     const isBuildTooltip = tooltip.matches('div.fixed.max-w-sm.w-full.pointer-events-none')
@@ -149,7 +155,7 @@
     if (names.length !== 1 || descriptions.length !== 1 || names[0].nextElementSibling !== descriptions[0]
       || names[0].parentElement !== descriptions[0].parentElement
       || protectedElement(names[0]) || protectedElement(descriptions[0])
-      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || (names[0].children ? [...names[0].children].some(node => !isOwned(node)) : names[0].childElementCount !== 0)
+      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || hasUnownedNameElement(names[0], isOwned)
       || descriptions[0].querySelector('script, style, iframe, object, embed, template')
       || !observedParagraphBreaks(descriptions[0])) return null;
     return { nameElement: names[0], descriptionElement: descriptions[0], tooltip: true };
@@ -162,7 +168,7 @@
     if (names.length !== 1 || descriptions.length !== 1 || names[0].nextElementSibling !== descriptions[0]
       || names[0].parentElement !== descriptions[0].parentElement
       || protectedElement(names[0]) || protectedElement(descriptions[0])
-      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || (names[0].children ? [...names[0].children].some(node => !isOwned(node)) : names[0].childElementCount !== 0)
+      || textNodes(names[0]).filter(node => !isOwned(node)).length !== 1 || hasUnownedNameElement(names[0], isOwned)
       || descriptions[0].querySelector('a, button, input, textarea, select, script, style, iframe, object, embed, template')
       || !observedParagraphBreaks(descriptions[0])) return null;
     for (const element of descriptions[0].querySelectorAll('*')) {
@@ -180,7 +186,7 @@
       const nameElement = anchor.querySelector('.font-teko');
       const descriptionElement = anchor.querySelector('.text-xs');
       if (textNodes(nameElement).filter(node => !isOwned(node)).length !== 1
-        || [...(nameElement.children || [])].some(node => !isOwned(node))) continue;
+        || hasUnownedNameElement(nameElement, isOwned)) continue;
       if (!observedParagraphBreaks(descriptionElement)) continue;
       if (descriptionElement.querySelector('script, style, iframe, object, embed, template')) continue;
       slots.push(Object.freeze({ anchor, nameElement, descriptionElement,

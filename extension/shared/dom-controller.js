@@ -301,7 +301,10 @@
           scanAgain = false;
           await performScan();
         } while (scanAgain && !disposed && enabled && !stopped);
-      })().finally(() => { scanPromise = null; });
+      })().finally(() => {
+        scanPromise = null;
+        if (scanAgain && !disposed && enabled && !stopped) return scan();
+      });
       return scanPromise;
     }
 
