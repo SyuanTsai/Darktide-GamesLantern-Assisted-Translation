@@ -196,7 +196,7 @@ test('UnitT20_NativeEvidenceSerializesOnlyObservedPageFactsDeterministically', (
   }));
   assert.throws(() => serializeNativeSnapshot({
     pathname: '/abilities/brain-rupture', patch: { status: 'absent' }, skills: [], weapons: [],
-    identity: { gameVersion: '1.13.2', gameReleaseId: 'darktide:1.13.2' }
+    identity: { gameVersion: '9.8.7', gameReleaseId: 'darktide:9.8.7' }
   }), /exact|unexpected/i);
 });
 

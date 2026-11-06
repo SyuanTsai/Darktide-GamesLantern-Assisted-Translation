@@ -132,4 +132,4 @@ if (require.main === module) {
     selectedOrigin: result.selectedOrigin, includeTestHarness: result.includeTestHarness }) + '\n');
 }
 
-module.exports = { PRODUCTION_ORIGIN, PREVIEW_ORIGIN, buildDevExtension };
+module.exports = { PRODUCTION_ORIGIN, PREVIEW_ORIGIN, SHARED_FILES, buildDevExtension };

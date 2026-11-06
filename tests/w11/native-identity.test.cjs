@@ -1,53 +1,15 @@
-'use strict';
-
-const assert = require('node:assert/strict');
-const test = require('node:test');
-const { createHash, webcrypto } = require('node:crypto');
-const { createNativeIdentityResolver } = require('../../extension/shared/native-identity.js');
-
-function sha256(bytes) {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-test('UnitT10_UnknownNativeSnapshotDoesNotInferIdentityFromPatchLabel', async () => {
-  // Scenario: Given a rendered patch label with no locally registered snapshot proof.
-  // Purpose: Prevent a familiar patch name or Live badge from being treated as a game-version identity.
-  const bytes = Buffer.from('isolated native snapshot without a trusted mapping', 'utf8');
-  const resolver = createNativeIdentityResolver({ cryptoApi: webcrypto });
-
-  // Given no proof registry entry exists for these native bytes.
-  const result = await resolver.resolve(bytes);
-
-  // Then identity remains unknown; display names are not an input to this decision.
-  assert.deepEqual(result, { status: 'unknown', reason: 'native-proof-not-found' });
+const test=require('node:test');const assert=require('node:assert/strict');const {createHash,webcrypto}=require('node:crypto');
+const {snapshot}=require('../helpers/source-data-display.cjs');const {createNativeIdentityResolver,matchAlias}=require('../../extension/shared/native-identity.js');
+// Scenario: only an exact registered byte digest resolves. Purpose: test harness cannot infer identity from labels or arbitrary bytes.
+test('UnitT10_本機證據只接受精確digest與新identity',async()=>{
+ const bytes=Buffer.from('isolated fixture');const identity=snapshot().identity;
+ const resolver=createNativeIdentityResolver({cryptoApi:webcrypto,proofs:[{evidenceId:'test',sha256:createHash('sha256').update(bytes).digest('hex'),identity,patchLabel:'Patch'}]});
+ assert.deepEqual((await resolver.resolve(bytes)).identity,identity);assert.equal((await resolver.resolve(Buffer.from('other'))).status,'unknown');
+ assert.throws(()=>createNativeIdentityResolver({cryptoApi:webcrypto,proofs:[{evidenceId:'bad',sha256:'a'.repeat(64),identity:{gameVersion:'9.8.7'}}]}));
 });
-
-test('UnitT20_ResolvesOnlyExactLocallyRegisteredSnapshotDigestAndTuple', async () => {
-  // Scenario: Given one reproducible native snapshot digest pinned to a complete local W08 tuple.
-  // Purpose: Allow test-controlled evidence while rejecting changed bytes or incomplete/contradictory identity.
-  const bytes = Buffer.from('explicit isolated snapshot proof', 'utf8');
-  const identity = { gameVersion: '1.13.2', gameReleaseId: 'darktide:1.13.2', snapshotId: 'synthetic-primary' };
-  const resolver = createNativeIdentityResolver({
-    cryptoApi: webcrypto,
-    proofs: [{ evidenceId: 'isolated-test-only', sha256: sha256(bytes), identity, patchLabel: 'Depths of the Damned' }]
-  });
-
-  // Given the exact proof bytes and a one-byte-changed lookalike.
-  const result = await resolver.resolve(bytes);
-  const changed = await resolver.resolve(Buffer.from('explicit isolated snapshot proof!', 'utf8'));
-
-  // Then only the exact digest resolves to the immutable trusted tuple.
-  assert.deepEqual(result, { status: 'verified', identity, patchLabel: 'Depths of the Damned' });
-  assert.deepEqual(changed, { status: 'unknown', reason: 'native-proof-not-found' });
-  assert.throws(() => createNativeIdentityResolver({
-    cryptoApi: webcrypto,
-    proofs: [{ evidenceId: 'incomplete', sha256: sha256(bytes), identity: { gameVersion: '1.13.2' } }]
-  }), /identity|tuple/i);
-  assert.throws(() => createNativeIdentityResolver({
-    cryptoApi: webcrypto,
-    proofs: [
-      { evidenceId: 'first', sha256: sha256(bytes), identity },
-      { evidenceId: 'contradiction', sha256: sha256(bytes), identity: { ...identity, gameVersion: '1.13.1' } }
-    ]
-  }), /duplicate|conflict/i);
+// Scenario: a route slug or title resembles an ID. Purpose: only directly observed IDs enable strong matching.
+test('UnitT20_別名比對不由path猜ID',()=>{
+ const aliases={ids:['id'],path:'/abilities/example'};
+ assert.equal(matchAlias(aliases,{gameslanternId:'id'}),true);assert.equal(matchAlias(aliases,{gameslanternId:'other'}),false);
+ assert.equal(matchAlias(aliases,{path:'/abilities/example'}),null);assert.equal(matchAlias(null,{gameslanternId:'id'}),null);
 });

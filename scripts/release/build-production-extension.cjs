@@ -4,7 +4,6 @@ const { spawnSync } = require('node:child_process');
 const { createHash } = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const productionDataset = require('../../extension/shared/production-dataset.js');
 
 const REPOSITORY_ROOT = path.resolve(__dirname, '..', '..');
 const PRODUCTION_ORIGIN = 'https://darktide.tw-syuan.com';
@@ -23,13 +22,6 @@ const CONTENT_MATCHES = Object.freeze([
   'https://darktide.gameslantern.com/weapon-blessing-traits*',
   'https://darktide.gameslantern.com/weapons/*'
 ]);
-const W15 = Object.freeze({
-  gameVersion: '1.13.2',
-  contentVersion: '1.13.2.3',
-  buildId: '6872aee741cef7f150bd79fc25ad251276b15f6a81a9c287f5e3623b6df422dc',
-  dataRevision: 'f182e7b4ba6fb04c9713ebada2cdbc8aabdd31d5b52b30a754e188ecc3fb5b2f',
-  manifestSha256: 'fcd7ff131ae55315fa0b9323355ed0e7b69788ffe03841de025723cec16e8642'
-});
 const ICON_PINS = Object.freeze({
   'source.svg': 'c569271e10e615072a265bb42cecba3a64acaa6a88537cbd115dff35ecdd5b07',
   'icon16.png': 'a89b64ac3cb5faf67f6ee3395156985966f277e91cd9452c5322eb7f7895b68d',
@@ -130,18 +122,6 @@ function validateVersion(version) {
   return version;
 }
 
-// Display-only W16 pin remains until spec2; it never selects or validates W10 data.
-function buildDatasetPin() {
-  return productionDataset.normalizePin({ schema: 'w16-production-dataset-pin/1',
-    gameVersion: W15.gameVersion, gameReleaseId: 'darktide:1.13.2', contentVersion: W15.contentVersion,
-    dataRevision: W15.dataRevision, manifestSha256: W15.manifestSha256 });
-}
-
-function datasetPinScript(pin) {
-  return "'use strict';\n"
-    + 'globalThis.W16ProductionDatasetPin = Object.freeze(' + JSON.stringify(pin, null, 2) + ');\n';
-}
-
 function buildManifest(version) {
   return {
     manifest_version: 3,
@@ -158,7 +138,7 @@ function buildManifest(version) {
         'shared/source-data-contract.js', 'shared/loader.js',
         'shared/document-session.js', 'shared/client.js', 'shared/native-identity.js',
         'shared/view-model.js', 'shared/presentation.js', 'shared/production-dataset.js', 'shared/dom-adapter.js',
-        'shared/dom-controller.js', 'shared/production-dataset-pin.js', 'shared/content-entry.js'
+        'shared/dom-controller.js', 'shared/content-entry.js'
       ],
       css: ['shared/display.css'],
       run_at: 'document_idle',
@@ -220,7 +200,6 @@ async function buildProductionExtensionPackage(options = {}) {
   const iconDirectory = options.iconDir === undefined ? ICON_DIR : path.resolve(options.iconDir);
   const icons = readIcons(iconDirectory);
   const manifest = buildManifest(version);
-  const datasetPin = buildDatasetPin();
   const packageDirectory = path.join(outputDirectory, 'unpacked');
   const archiveName = 'darktide-gameslantern-zh-tw-' + version + '.zip';
   const archivePath = path.join(outputDirectory, archiveName);
@@ -232,8 +211,6 @@ async function buildProductionExtensionPackage(options = {}) {
     const source = requireRegularFile(path.join(REPOSITORY_ROOT, 'extension', 'shared', relative), 'shared runtime file ' + relative);
     copyRaw(fs.readFileSync(source), path.join(packageDirectory, 'shared', relative));
   }
-  writeNew(path.join(packageDirectory, 'shared', 'production-dataset-pin.js'),
-    Buffer.from(datasetPinScript(datasetPin), 'utf8'));
   for (const relative of ['icon16.png', 'icon32.png', 'icon48.png', 'icon128.png']) {
     copyRaw(icons.get(relative).raw, path.join(packageDirectory, 'icons', relative));
   }
@@ -249,7 +226,6 @@ async function buildProductionExtensionPackage(options = {}) {
     schema: 'w16-extension-package/1',
     extensionVersion: version,
     productionOrigin: PRODUCTION_ORIGIN,
-    displayDatasetPin: datasetPin, // spec2 前保留的顯示層 pin，不代表 W10 資料來源。
     iconAssets: Object.keys(ICON_PINS).map((file) => ({ path: file, sha256: ICON_PINS[file] })),
     packageFiles,
     archive: { fileName: archiveName, sizeBytes: archiveBytes.byteLength, sha256: sha256(archiveBytes) }
@@ -300,7 +276,6 @@ module.exports = {
   ICON_PINS,
   PRODUCTION_ORIGIN,
   SHARED_FILES,
-  W15,
   buildProductionExtensionPackage,
   parseCli,
   readPngSize,

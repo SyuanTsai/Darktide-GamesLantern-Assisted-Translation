@@ -23,5 +23,6 @@ test('InterT20_production建置離線封裝且不含baseline', async () => {
   assert.ok(fs.statSync(built.archivePath).size > 0);
   assert.ok(!built.receipt.packageFiles.some(x => x.path.startsWith('baseline/') || x.path.includes('baseline-provider')));
   assert.ok(built.manifest.content_scripts[0].js.includes('shared/source-data-contract.js'));
-  assert.ok(built.receipt.packageFiles.some(x => x.path === 'shared/production-dataset-pin.js')); // spec2 retains display pin.
+  assert.ok(!built.receipt.packageFiles.some(x => x.path.includes('dataset-pin')));
+  assert.equal(Object.hasOwn(built.receipt, 'displayDatasetPin'), false);
 });

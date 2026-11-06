@@ -91,7 +91,7 @@
   function reviewLabel(record){
     return record&&record.reviewState==='approved'?'已標示審核完成':'待人工審核';
   }
-  function termLocalizations(domains){
+  function localizedTermRows(domains){
     const map=new Map();
     const terms=domains.terms;
     for(const record of terms.records){
@@ -498,7 +498,7 @@
     appendPair(metadata,'可發布',String(manifest.publicationEligible===true));
     appendPair(metadata,'待審記錄',String(hasPending));
     byId('snapshot-info').hidden=false;
-    const terms=termLocalizations(snapshot.domains);
+    const terms=localizedTermRows(snapshot.domains);
     renderEntityCards(snapshot,terms);
     renderIntegrity(snapshot);
     status('已顯示通過驗證的本機快照。','active');
