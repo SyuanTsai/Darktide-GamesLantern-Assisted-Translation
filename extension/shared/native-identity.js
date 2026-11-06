@@ -24,7 +24,7 @@
     const keys = ['schemaVersion', 'gameVersion', 'sourceCommit', 'textBatch'];
     exactKeys(value, keys, 'native proof identity');
     if (keys.some(key => typeof value[key] !== 'string')
-      || value.schemaVersion !== '1.0.0' || !/^[0-9]+(\.[0-9]+){1,3}$/.test(value.gameVersion)
+      || !/^1\.\d+\.\d+$/.test(value.schemaVersion) || !/^[0-9]+(\.[0-9]+){1,3}$/.test(value.gameVersion)
       || !/^[a-f0-9]{40}$/i.test(value.sourceCommit) || !/^[A-Za-z0-9._-]{1,128}$/.test(value.textBatch)) fail('invalid native proof identity');
     return Object.freeze({ ...value });
   }

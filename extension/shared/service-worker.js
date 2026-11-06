@@ -30,6 +30,9 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
   'use strict';
 
   const MESSAGE_TYPE = 'W10_GET_SNAPSHOT';
+  const FILE_MESSAGE_TYPE = 'W10_GET_SNAPSHOT_FILE';
+  // 32 MiB base64 約 42.7 MiB；預留 1 MiB 包裝仍低於 64 MiB。
+  if (4 * Math.ceil(loaderApi.LIMITS.fileBytes / 3) + 1024 * 1024 >= 64 * 1024 * 1024) throw new Error('message limit exceeded');
   const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const GAME_ORIGIN = 'https://darktide.gameslantern.com';
 
@@ -105,24 +108,13 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     return encoded.join('');
   }
 
-  function serializeSnapshot(snapshot) {
-    if (!snapshot) return null;
-    return {
-      currentBytes: bytesToBase64(snapshot.currentBytes),
-      files: Object.fromEntries(loaderApi.CATEGORIES.map(k => [k, bytesToBase64(snapshot.files[k])]))
-    };
-  }
-
   function serializeResult(result) {
-    return {
-      status: result.status,
-      source: result.source,
-      identity: result.identity,
-      updateStatus: result.updateStatus || null,
-      reason: result.reason || null,
+    const snapshot = result.snapshot;
+    return { status: result.status, source: result.source, identity: result.identity,
+      updateStatus: result.updateStatus || null, reason: result.reason || null,
       errorCode: result.error && result.error.code ? String(result.error.code) : null,
-      snapshot: serializeSnapshot(result.snapshot)
-    };
+      snapshot: snapshot ? { currentBytes: bytesToBase64(snapshot.currentBytes), digest: snapshot.digest,
+        sizes: Object.fromEntries(loaderApi.CATEGORIES.map(k => [k, snapshot.files[k].byteLength])) } : null };
   }
 
   function createMessageHandler({ runtime, coordinator } = {}) {
@@ -135,22 +127,27 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
         sendResponse(errorResponse('UNTRUSTED_SENDER'));
         return false;
       }
-      if (!exactKeys(message, ['type'], ['active', 'manual']) || message.type !== MESSAGE_TYPE
+      const isFile = message && message.type === FILE_MESSAGE_TYPE;
+      if (isFile ? (!exactKeys(message, ['type', 'category', 'identity', 'digest'], [])
+        || !loaderApi.CATEGORIES.includes(message.category) || typeof message.digest !== 'string'
+        || !/^[a-f0-9]{64}$/.test(message.digest) || !exactKeys(message.identity, ['schemaVersion','gameVersion','sourceCommit','textBatch'], []))
+        : (!exactKeys(message, ['type'], ['active', 'manual']) || message.type !== MESSAGE_TYPE
         || (message.active !== undefined && typeof message.active !== 'boolean')
-        || (message.manual !== undefined && typeof message.manual !== 'boolean')) {
-        sendResponse(errorResponse('INVALID_MESSAGE'));
-        return false;
+        || (message.manual !== undefined && typeof message.manual !== 'boolean'))) {
+        sendResponse(errorResponse('INVALID_MESSAGE')); return false;
       }
-      Promise.resolve(coordinator.getSnapshot({
-        active: message.active === undefined ? true : message.active,
-        manual: message.manual === true
-      })).then((result) => sendResponse({ ok: true, result: serializeResult(result) }), (error) => {
-        sendResponse(errorResponse(error && error.code ? String(error.code) : 'UPDATE_FAILED'));
-      });
+      Promise.resolve(coordinator.getSnapshot(isFile ? { active: false, manual: false } : {
+        active: message.active === undefined ? true : message.active, manual: message.manual === true
+      })).then((result) => {
+        if (!isFile) return sendResponse({ ok: true, result: serializeResult(result) });
+        const snapshot = result.snapshot;
+        if (!snapshot || snapshot.digest !== message.digest || !loaderApi.sameIdentity(snapshot.identity, message.identity)) return sendResponse(errorResponse('SNAPSHOT_CHANGED'));
+        return sendResponse({ ok: true, identity: snapshot.identity, digest: snapshot.digest, category: message.category, bytes: bytesToBase64(snapshot.files[message.category]) });
+      }, (error) => sendResponse(errorResponse(error && error.code ? String(error.code) : 'UPDATE_FAILED')));
       return true;
     };
   }
 
-  return Object.freeze({ MESSAGE_TYPE, createMessageHandler, serializeResult, trustedSender,
+  return Object.freeze({ MESSAGE_TYPE, FILE_MESSAGE_TYPE, createMessageHandler, serializeResult, trustedSender,
     supportedGamePath });
 });

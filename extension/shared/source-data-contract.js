@@ -56,7 +56,7 @@
     return v;
   }
   function identity(v) {
-    check(v.schemaVersion === '1.0.0', 'schemaVersion'); string(v.gameVersion, VERSION); string(v.sourceCommit, COMMIT); string(v.textBatch, BATCH);
+    string(v.schemaVersion, /^1\.\d+\.\d+$/); string(v.gameVersion, VERSION); string(v.sourceCommit, COMMIT); string(v.textBatch, BATCH);
   }
   function validateCurrent(v) {
     safe(v); object(v, [...IDENTITY_KEYS, 'path', 'versions']); identity(v); string(v.path);
@@ -86,19 +86,46 @@
     }
   }
   const ref = kind => new RegExp('^darktide:' + kind + ':[a-z0-9_.:-]+$');
-  function values(v, category) {
+  function values(v, category, schemaVersion) {
+    const modern = schemaVersion !== '1.0.0' && Number(schemaVersion.split('.')[1]) >= 1;
     if (category === 'skills') {
       object(v, ['archetype', 'tree', 'nodeType', 'icon', 'parents', 'maxPoints', 'params']);
       string(v.archetype, null, 1); string(v.tree, null, 1); nullable(v.icon); integer(v.maxPoints, 1);
       enumeration(v.nodeType, ['ability', 'ability_modifier', 'aura', 'keystone', 'keystone_modifier', 'tactical', 'tactical_modifier', 'stat', 'start', 'default', 'broker_stimm']);
       array(v.parents, x => string(x, ref('skill')), { unique: true });
     } else if (category === 'weapons') {
-      object(v, ['family', 'mark', 'weaponType', 'archetypes', 'actions', 'bars', 'blessings', 'params']);
+      object(v, ['family', 'mark', 'weaponType', 'archetypes', 'actions', 'bars', 'blessings', 'params', ...(modern ? ['curves', 'attackCombos'] : [])]);
       string(v.family, null, 1); string(v.mark, null, 1); string(v.weaponType, ref('term'));
       array(v.archetypes, x => string(x), { unique: true }); array(v.blessings, x => string(x, ref('blessing')), { unique: true });
       array(v.actions, a => { object(a, ['slot', 'id', 'type', 'name']); ['slot', 'id', 'type'].forEach(k => string(a[k])); bilingual(a.name); });
       array(v.bars, b => { object(b, ['id', 'name', 'stats']); string(b.id); bilingual(b.name);
-        array(b.stats, s => { object(s, ['key', 'name', 'min', 'max']); string(s.key); bilingual(s.name); ['min', 'max'].forEach(k => check(typeof s[k] === 'number' && Number.isFinite(s[k]), 'stat')); }); });
+        array(b.stats, s => { object(s, ['key', 'name', 'min', 'max', ...(modern ? ['curveId'] : [])]); if (modern) string(s.curveId); string(s.key); bilingual(s.name); ['min', 'max'].forEach(k => check(typeof s[k] === 'number' && Number.isFinite(s[k]), 'stat')); }); });
+      if (modern) {
+        // 待 WP2b schema 定案後收緊原因碼與名稱內容；目前依規格檢查型別與固定欄位。
+        const location = x => { object(x, ['path', 'line']); string(x.path); integer(x.line, 1); };
+        const number = x => check(typeof x === 'number' && Number.isFinite(x), 'number');
+        array(v.curves, c => {
+          object(c, ['id','bar','stat','name','input','interpolation','knots','outputUnit','unknown','source']);
+          ['id','bar','stat'].forEach(k => string(c[k])); bilingual(c.name);
+          object(c.input, ['source','unit','min','max']); check(c.input.source === 'base_stat_value' && c.input.unit === 'ratio' && c.input.min === 0 && c.input.max === 1, 'curve input');
+          enumeration(c.interpolation, ['linear','unknown']); nullable(c.outputUnit); nullable(c.unknown); location(c.source);
+          array(c.knots, k => { object(k, ['input','output']); number(k.input); if (Array.isArray(k.output)) k.output.forEach(number); else if (k.output !== null) number(k.output); });
+          check(c.knots.length === 2 && c.knots[0].input === 0 && c.knots[1].input === 1, 'curve knots');
+          if (c.interpolation === 'unknown' || c.knots.some(k => k.output === null)) check(c.unknown !== null, 'curve unknown');
+          if (c.knots.every(k => k.output !== null)) {
+            check(Array.isArray(c.knots[0].output) === Array.isArray(c.knots[1].output), 'curve output types');
+            if (Array.isArray(c.knots[0].output)) check(c.knots[0].output.length > 0 && c.knots[0].output.length === c.knots[1].output.length, 'curve array lengths');
+          }
+        });
+        check(new Set(v.curves.map(c => c.id)).size === v.curves.length, 'curve ids');
+        for (const b of v.bars) for (const stat of b.stats) check(v.curves.some(c => c.id === stat.curveId && c.bar === b.id && c.stat === stat.key), 'curve reference');
+        array(v.attackCombos, c => {
+          object(c, ['id','kind','start','steps','loopsTo','unknown','source']); string(c.id); enumeration(c.kind, ['light','heavy']); string(c.start); nullable(c.unknown); location(c.source);
+          array(c.steps, step => { object(step, ['action','input','name','damageProfile','damageProfileUnknown']); string(step.action); string(step.input); bilingual(step.name); nullable(step.damageProfile); nullable(step.damageProfileUnknown); });
+          if (c.loopsTo !== null) integer(c.loopsTo, 0, c.steps.length - 1);
+        });
+        check(new Set(v.attackCombos.map(c => c.id)).size === v.attackCombos.length, 'combo ids');
+      }
     } else if (category === 'blessings') {
       object(v, ['weapons', 'tiers', 'params']); array(v.weapons, x => string(x, ref('weapon')), { unique: true, min: 1 });
       array(v.tiers, t => { object(t, ['tier', 'params']); integer(t.tier, 1, 4); params(t.params); }, { min: 1 });
@@ -109,7 +136,7 @@
     }
     params(v.params);
   }
-  function item(v, category) {
+  function item(v, category, schemaVersion) {
     object(v, ['id', 'key', 'name', 'official', 'values', 'explanation', 'errata', 'source'], ['aliases']);
     string(v.id, ref({ skills: 'skill', weapons: 'weapon', blessings: 'blessing', terms: 'term' }[category])); string(v.key, null, 1);
     object(v.name, ['en', 'zh', 'origin']); nullable(v.name.en); nullable(v.name.zh); enumeration(v.name.origin, ['official', 'glossary', 'internal']);
@@ -125,12 +152,12 @@
       array(v.aliases.gameslantern.ids, x => string(x), { unique: true, min: 1 });
       if (Object.hasOwn(v.aliases.gameslantern, 'path')) string(v.aliases.gameslantern.path);
     }
-    values(v.values, category);
+    values(v.values, category, schemaVersion);
   }
   function validateCategoryDocument(v, { category, current } = {}) {
     enumeration(category, CATEGORIES); validateCurrent(current); safe(v); object(v, [...IDENTITY_KEYS, 'category', 'items']); identity(v);
     check(v.category === category && IDENTITY_KEYS.every(k => v[k] === current[k]), 'category identity');
-    array(v.items, x => item(x, category)); check(new Set(v.items.map(x => x.id)).size === v.items.length, 'unique ids'); return v;
+    array(v.items, x => item(x, category, v.schemaVersion)); check(new Set(v.items.map(x => x.id)).size === v.items.length, 'unique ids'); return v;
   }
   function validateSnapshot({ current, documents } = {}) {
     validateCurrent(current); object(documents, CATEGORIES);

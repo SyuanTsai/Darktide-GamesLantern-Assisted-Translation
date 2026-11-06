@@ -40,3 +40,12 @@ test('UnitT30_技能部分覆寫與還原', () => {
     const unmatched = { ...model, nativeDescription: 'not observed' }; assert.equal(dom.applySkill(slot, unmatched), null);
   }
 });
+// Scenario: a validated 1.1 weapon has curves and combos, then marks them unknown. Purpose: render only known values using text nodes.
+test('UnitT40_一點一曲線與連段渲染且unknown隱藏', () => {
+ const {fixture11}=require('../helpers/source-data-fixture-11.cjs'); const contract=require('../../extension/shared/source-data-contract.js');
+ const x=fixture11(), {current,...documents}=x; const verified=contract.validateSnapshot({current,documents});
+ const [family]=p.buildWeaponFamilyViewModels(verified), mark=family.marks[0]; const document=createDocument();
+ const panel=a.makeWeaponPanel(document,family,mark); assert.match(panel.textContent,/屬性曲線/); assert.match(panel.textContent,/攻擊組合輕擊連段：斬擊/);
+ const y=fixture11(); for(const w of y.weapons.items) { for(const c of w.values.curves) {c.interpolation='unknown'; c.unknown='DYNAMIC_VALUE';} for(const c of w.values.attackCombos) c.unknown='DYNAMIC_VALUE'; }
+ const {current:cur,...docs}=y; const [f]=p.buildWeaponFamilyViewModels(contract.validateSnapshot({current:cur,documents:docs})); const hidden=a.makeWeaponPanel(document,f,f.marks[0]); assert.doesNotMatch(hidden.textContent,/屬性曲線|攻擊組合/);
+});

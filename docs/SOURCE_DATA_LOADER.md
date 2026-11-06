@@ -10,7 +10,7 @@ W10 固定讀取 `https://darktide.tw-syuan.com/source-data/current.json`，再�
 
 回退順序為 active → previous → 保留原文，沒有包內 baseline。成功後 6 小時再檢查；失敗依 5 分鐘、30 分鐘、2 小時、6 小時退避（之後維持 6 小時）。手動檢查可略過等待，同時要求合併。current 的四欄識別與有效 active 相同時只抓 current，不重抓分類。
 
-worker 經受保護訊息傳送 base64 raw bytes 與 identity；client 重新驗證整組與 identity。一文件固定首次解析結果，手動檢查不熱換快照。
+worker 先以受保護訊息傳送 identity、整組 digest、currentBytes 與四檔大小；client 逐檔帶 identity 和 digest 取回 base64 raw bytes。每次取檔均比對目前快照鍵，切換或缺檔時放棄載入；收齊後重新驗證整組、identity 與 digest。單檔 32 MiB 編碼約 42.7 MiB，低於 64 MiB 訊息上限；整組位元組上限維持 64 MiB。一文件固定首次解析結果，手動檢查不熱換快照。
 
 ## 顯示層（spec2）
 
@@ -24,7 +24,7 @@ worker 經受保護訊息傳送 base64 raw bytes 與 identity；client 重新驗
 
 祝福閱讀器顯示 `official.zh` 原文、說明五節與「等級 × 數值」表，不產生舊的每級文案。表格依 `values.tiers[].tier` 及各級 params 顯示；unknown 一律為「原始碼未公開」。適用武器列出關聯的武器名稱與 mark。武器按 family 分組，可切換 mark，顯示名稱、官方描述、五節說明、`values.bars[]` 各 stat 的 min～max、`values.actions[]`，以及由 `values.blessings[]` 連到的祝福名稱。
 
-`projectWeaponCurves(item)` 與 `projectWeaponAttackCombos(item)` 在 schema 1.0.0 固定回 null，待 WP2 格式定案後接入。DOM 只接受非空陣列：曲線形狀為 `[{label,inputUnit,outputUnit,knots:[{input,output}]}]`，保留「來源曲線節點：輸入 X，輸出 Y」文字；連段形狀為 `[{label,steps:[{label,kind}]}]`。null／空陣列完全隱藏區塊，不以 bars min/max 推算曲線。
+`projectWeaponCurves(item)` 與 `projectWeaponAttackCombos(item)` 已接上 1.1.0 曲線與連段；1.0.0 回傳 null，unknown 或不完整資料不顯示。DOM 只接受非空陣列：曲線形狀為 `[{label,inputUnit,outputUnit,knots:[{input,output}]}]`，保留「來源曲線節點：輸入 X，輸出 Y」文字；連段形狀為 `[{label,steps:[{label,kind}]}]`。null／空陣列完全隱藏區塊，不以 bars min/max 推算曲線。
 
 勘誤只顯示 `locale === 'zh'`，在獨立「勘誤」區塊保留 official、corrected 與 valueRef。`locateErratum(text, erratum)` 固定回 null，待 WP3 提供精確子字串與出現次序欄位後接入，目前不搜尋字串或猜測定位。所有資料以 `textContent`／文字節點輸出；切回原文、patch label 改變、四欄 identity 任一變更或原生 slot 身分變更時，保留既有還原及停止機制。
 
@@ -33,3 +33,7 @@ worker 經受保護訊息傳送 base64 raw bytes 與 identity；client 重新驗
 `npm run test:source-data` 以 `node --test --test-concurrency=1` 執行 W10／W11／W16 所有測試。顯示 fixture 由 `tests/helpers/source-data-display.cjs` 在記憶體產生，並通過完整 schema 契約驗證。DOM 單元測試不依賴瀏覽器；DOM／MV3／IndexedDB 整合測試只使用既有本機 Playwright 與 Chromium，缺少時標示 skip，不下載。瀏覽器測試以本機 fixture 回應／封鎖網路，不存取線上網站。
 
 舊 W10 領域 helper、舊顯示 presentation 測試與 split fixture 已由新格式測試取代，直接相依的 W13 遠程武器測試也改驗證新 bars／actions。W01／W02 是獨立早期實驗與契約驗證流程，並非本顯示 runtime 或建置依賴；其中刻意使用的歷史版本號屬 fixture，不是選版 pin。全域文字掃描仍會找到 W02 固定 owner-snapshot 的 authoring 欄位名稱（含官方輸入摘要）；這是歷史契約驗證，不是顯示層的舊資料依賴，保留其原契約測試。
+
+## Schema 版本相容性
+
+接受 major 為 1 的三段版本，current 與四檔版本及其餘 identity 必須一致；其他 major 拒絕並保留原文。1.0.0 不允許曲線、連段及 curveId；1.1.0 起要求這些欄位並驗證參照。其他 1.x 版本號可接受，但不認得的欄位仍嚴格拒絕，不能保證未來 schema 相容。

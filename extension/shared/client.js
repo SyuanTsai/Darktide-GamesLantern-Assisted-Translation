@@ -113,15 +113,21 @@
       }
       try {
         const raw = result.snapshot;
-        if (!raw || typeof raw !== 'object' || Object.keys(raw).sort().join(',') !== 'currentBytes,files'
-          || !raw.files || Object.keys(raw.files).sort().join(',') !== [...loader.CATEGORIES].sort().join(',')) throw new Error('malformed snapshot');
-        let encodedBytes = raw.currentBytes.length;
-        for (const k of loader.CATEGORIES) encodedBytes += raw.files[k].length;
-        if (encodedBytes > 4 * Math.ceil(loader.LIMITS.snapshotBytes / 3) + 16) throw new Error('message exceeds limit');
-        if (raw.currentBytes.length > 4 * Math.ceil(loader.LIMITS.currentBytes / 3)) throw new Error('current exceeds limit');
-        const snapshot = await loader.verifyStoredSnapshot({ currentBytes: bytesFromBase64(raw.currentBytes),
-          files: Object.fromEntries(loader.CATEGORIES.map(k => [k, bytesFromBase64(raw.files[k])])), cryptoApi });
-        if (!loader.sameIdentity(result.identity, snapshot.identity)) return original('worker-identity-mismatch', null);
+        if (!raw || Object.keys(raw).sort().join(',') !== 'currentBytes,digest,sizes'
+          || !raw.sizes || Object.keys(raw.sizes).sort().join(',') !== [...loader.CATEGORIES].sort().join(',')
+          || typeof raw.digest !== 'string' || !/^[a-f0-9]{64}$/.test(raw.digest)
+          || typeof raw.currentBytes !== 'string' || raw.currentBytes.length > 4 * Math.ceil(loader.LIMITS.currentBytes / 3)) throw new Error('malformed metadata');
+        const currentBytes = bytesFromBase64(raw.currentBytes); let total = currentBytes.length; const files = {};
+        for (const category of loader.CATEGORIES) {
+          const size = raw.sizes[category];
+          if (!Number.isInteger(size) || size < 0 || size > loader.LIMITS.fileBytes || (total += size) > loader.LIMITS.snapshotBytes) throw new Error('invalid size');
+          const part = await runtime.sendMessage({ type: 'W10_GET_SNAPSHOT_FILE', category, identity: result.identity, digest: raw.digest });
+          if (!part || part.ok !== true || part.category !== category || part.digest !== raw.digest || !loader.sameIdentity(part.identity, result.identity)) throw new Error('snapshot changed');
+          files[category] = bytesFromBase64(part.bytes);
+          if (files[category].length !== size) throw new Error('file size mismatch');
+        }
+        const snapshot = await loader.verifyStoredSnapshot({ currentBytes, files, cryptoApi });
+        if (!loader.sameIdentity(result.identity, snapshot.identity) || snapshot.digest !== raw.digest) return original('worker-identity-mismatch', null);
         identity = snapshot.identity;
         const verified = { status: 'ready', source: result.source, snapshot, identity,
           updateStatus: result.updateStatus || null };
