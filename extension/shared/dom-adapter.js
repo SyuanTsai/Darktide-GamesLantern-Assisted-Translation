@@ -6,6 +6,18 @@
 })(typeof globalThis === 'object' ? globalThis : this, function (presentationApi) {
   'use strict';
 
+  // 來源：DarkTide-Web web/shared-render.mjs，origin/main 818f2cd2a6acd3962b6291c93e07b49dda05a4fe。
+  const UNIT_LABELS = Object.freeze({
+    percent: '%', ratio: '比例', seconds: '秒', s: '秒', count: '次', meters: '公尺',
+    point: '點', 'dodge-count': '次閃避', 'stamina-point': '耐力點',
+    'stamina-point-per-second': '耐力點／秒', 'normalized-speed-per-second': '標準化速度／秒', 'instance-count': '彈藥單位',
+    'attack-power-point': '攻擊威力點', 'cleave-power-point': '鋸擊威力點',
+  });
+
+  function valueWithUnit(value, unit) {
+    return String(value) + (unit && value !== '原始碼未公開' ? ' ' + (Object.hasOwn(UNIT_LABELS, unit) ? UNIT_LABELS[unit] : unit) : '');
+  }
+
   const OWNED_ATTRIBUTE = 'data-w11-owned';
   const SECTION_LABELS = Object.freeze({
     effect: '效果',
@@ -420,7 +432,7 @@
     table.append(head);
     for (const row of rows) {
       const tr = document.createElement('tr'); const th = document.createElement('th'); th.textContent = 'LV' + row.tier; tr.append(th);
-      for (const key of keys) { const p = row.params.find(p => p.key === key); const td = document.createElement('td'); td.textContent = p ? p.value + (p.value === '原始碼未公開' ? '' : (p.unit ? ' ' + p.unit : '')) : '原始碼未公開'; tr.append(td); }
+      for (const key of keys) { const p = row.params.find(p => p.key === key); const td = document.createElement('td'); td.textContent = p ? valueWithUnit(p.value, p.unit) : '原始碼未公開'; tr.append(td); }
       table.append(tr);
     }
     return table;
@@ -442,7 +454,7 @@
       addSection(content, '可用祝福', (mark.blessings || []).map(b => b.name));
       if (Array.isArray(mark.curves) && mark.curves.length) {
         addSection(content, '屬性曲線', mark.curves.flatMap(curve => [curve.label, ...curve.knots.map(k =>
-          '來源曲線節點：輸入 ' + k.input + (curve.inputUnit ? ' ' + curve.inputUnit : '') + '，輸出 ' + k.output + (curve.outputUnit ? ' ' + curve.outputUnit : ''))]));
+          '來源曲線節點：輸入 ' + valueWithUnit(k.input, curve.inputUnit) + '，輸出 ' + valueWithUnit(k.output, curve.outputUnit))]));
       }
       if (Array.isArray(mark.attackCombos) && mark.attackCombos.length) {
         addSection(content, '攻擊組合', mark.attackCombos.map(combo => combo.label + '：' + combo.steps.map(step => step.label + '（' + step.kind + '）').join(' → ')));

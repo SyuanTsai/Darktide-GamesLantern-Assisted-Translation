@@ -10,7 +10,7 @@ test('UnitT10_武器區塊null隱藏與非空投影渲染', () => {
   assert.match(panel.textContent, /傷害：10～20/); assert.match(panel.textContent, /斬擊/); assert.match(panel.textContent, /範例祝福/);
   const future = { ...mark, curves: [{ label: '<curve>', inputUnit: 'ratio', outputUnit: 'count', knots: [{ input: 0, output: 12 }] }], attackCombos: [{ label: '輕擊', steps: [{ label: '<step>', kind: 'light' }] }] };
   const rendered = a.makeWeaponPanel(document, { ...family, marks: [future] }, future);
-  assert.match(rendered.textContent, /屬性曲線<curve>來源曲線節點：輸入 0 ratio，輸出 12 count/);
+  assert.match(rendered.textContent, /屬性曲線<curve>來源曲線節點：輸入 0 比例，輸出 12 次/);
   assert.match(rendered.textContent, /攻擊組合輕擊：<step>（light）/);
   assert.equal(descendants(rendered, n => n.tagName === 'CURVE' || n.tagName === 'STEP').length, 0);
 });
@@ -23,7 +23,7 @@ test('UnitT20_祝福原文五節勘誤與完整階級表', () => {
   for (const tier of [1, 2, 3, 4]) assert.match(reader.element.textContent, new RegExp('LV' + tier));
   assert.match(reader.element.textContent, /原始碼未公開/); assert.match(reader.element.textContent, /適用武器：範例劍／Mk I、範例劍／Mk II/);
   const detail = a.makeDetails(document, p.buildSkillViewModels(snapshot())[0]);
-  assert.match(detail.textContent, /勘誤原說明 → 修正說明/); assert.doesNotMatch(detail.textContent, /old|new|計算/);
+  assert.match(detail.textContent, /勘誤原說明 → 修正說明/); assert.doesNotMatch(detail.textContent, /old|new|計算|\/values\//);
   assert.ok(detail.textContent.indexOf('效果內容') < detail.textContent.indexOf('條件內容'));
   reader.dispose();
 });
@@ -63,4 +63,15 @@ test('UnitT60_空步驟連段不渲染', () => {
  const x=fixture11(); for(const w of x.weapons.items) for(const c of w.values.attackCombos) {c.steps=[]; c.loopsTo=null;}
  const {current,...documents}=x; const [family]=p.buildWeaponFamilyViewModels(contract.validateSnapshot({current,documents}));
  assert.equal(family.marks[0].attackCombos,null); assert.doesNotMatch(a.makeWeaponPanel(createDocument(),family,family.marks[0]).textContent,/攻擊組合/);
+});
+
+// Scenario: tier values have known, unknown, empty units and an undisclosed value. Purpose: display website labels and preserve fallback formatting.
+test('UnitT70_參數單位顯示網站標籤與未知代碼', () => {
+  const table = a.makeTierTable(createDocument(), [{ tier: 1, params: [
+    { key: 'ratio', value: '0.5', unit: 'ratio' }, { key: 'percent', value: '20', unit: 'percent' },
+    { key: 'other', value: '3', unit: 'custom-unit' }, { key: 'none', value: '4', unit: '' },
+    { key: 'hidden', value: '原始碼未公開', unit: 'percent' }
+  ] }]);
+  const cells = descendants(table, n => n.tagName === 'TD').map(n => n.textContent);
+  assert.deepEqual(cells, ['0.5 比例', '20 %', '3 custom-unit', '4', '原始碼未公開']);
 });

@@ -60,7 +60,7 @@
         .map(([key, heading]) => ({ sectionId: key, heading, items: [item.explanation[key]] })),
       errata: item.errata.filter(erratum => erratum.locale === 'zh'
         && locateErratum(item.official.zh, erratum) === null)
-        .map(erratum => erratum.official + ' → ' + erratum.corrected + '（' + erratum.valueRef + '）'),
+        .map(erratum => erratum.official + ' → ' + erratum.corrected),
       terms: documents.terms.items.filter(term => term.values.refs.includes(item.id) && localizedName(term))
         .map(term => {
           const label = localizedName(term);
