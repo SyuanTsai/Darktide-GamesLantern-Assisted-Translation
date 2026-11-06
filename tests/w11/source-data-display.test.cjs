@@ -12,6 +12,14 @@ test('UnitT05_精確定位勘誤',()=>{
  assert.deepEqual(p.locateErratum(item,{anchor:{field:'name',locale:'zh',text:'名稱',occurrence:1}}),{field:'name',locale:'zh',start:0,end:2});
  assert.equal(p.locateErratum(item,{}),null);
 });
+// Scenario: repeated Latin and Chinese text overlaps at the second occurrence. Purpose: count overlapping matches and reject an occurrence beyond the last match.
+test('UnitT06_重疊勘誤定位',()=>{
+ for(const [text,anchorText] of [['aaa','aa'],['哈哈哈','哈哈']]){
+  const item={official:{zh:text}}; const anchor={field:'official',locale:'zh',text:anchorText,occurrence:2};
+  assert.deepEqual(p.locateErratum(item,{anchor}),{field:'official',locale:'zh',start:1,end:3});
+  assert.equal(p.locateErratum(item,{anchor:{...anchor,occurrence:3}}),null);
+ }
+});
 // Scenario: validated new documents enter the presentation boundary. Purpose: protect field projection, text guards and term context.
 test('UnitT10_投影四份文件與文字防護',()=>{
  const s=snapshot(); const [a,b]=p.buildSkillViewModels(s);

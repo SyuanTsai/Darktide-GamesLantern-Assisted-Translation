@@ -10,7 +10,7 @@ test('UnitT05_驗證勘誤定位欄位', () => {
     documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', ...(anchor ? { anchor } : {}) }];
     assert.doesNotThrow(() => contract.validateSnapshot({ current, documents }));
   }
-  for (const change of [{extra: 1}, {field: 'bad'}, {locale: 'ja'}, {text: ''}, {occurrence: 0}, {occurrence: 1.5}, {text: '<script>'}]) {
+  for (const change of [{extra: 1}, {field: 'bad'}, {locale: 'ja'}, {locale: 'en'}, {text: ''}, {occurrence: 0}, {occurrence: 1.5}, {text: '<script>'}]) {
     const { current, ...documents } = fixture();
     documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', anchor: { field: 'official', locale: 'zh', text: '文字', occurrence: 1, ...change } }];
     assert.throws(() => contract.validateSnapshot({ current, documents }), { code: 'SOURCE_DATA_INVALID' });

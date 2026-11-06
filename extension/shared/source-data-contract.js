@@ -152,7 +152,7 @@
     object(v.explanation, ['effect', 'conditions', 'calculation', 'notes', 'extra']);
     Object.entries(v.explanation).forEach(([k, x]) => string(x, null, k === 'effect' ? 1 : 0));
     array(v.errata, e => { object(e, ['locale', 'official', 'corrected', 'valueRef'], ['anchor']); enumeration(e.locale, ['en', 'zh']); string(e.official); string(e.corrected); string(e.valueRef, /^(\/([^~\/]|~[01])*)+$/);
-      if (Object.hasOwn(e, 'anchor')) { const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence']); enumeration(a.field, ['official', 'name']); enumeration(a.locale, ['en', 'zh']); string(a.text, null, 1); integer(a.occurrence, 1); }
+      if (Object.hasOwn(e, 'anchor')) { const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence']); enumeration(a.field, ['official', 'name']); enumeration(a.locale, ['en', 'zh']); check(a.locale === e.locale, 'anchor locale'); string(a.text, null, 1); integer(a.occurrence, 1); }
     });
     if (Object.hasOwn(v, 'aliases')) {
       object(v.aliases, ['gameslantern']); object(v.aliases.gameslantern, ['ids'], ['path']);

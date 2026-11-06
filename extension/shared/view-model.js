@@ -37,9 +37,9 @@
     for (let i = 0; i < a.occurrence; i += 1) {
       start = text.indexOf(a.text, next);
       if (start < 0) return null;
-      next = start + a.text.length;
+      next = start + 1;
     }
-    return { field: a.field, locale: a.locale, start, end: next };
+    return { field: a.field, locale: a.locale, start, end: start + a.text.length };
   }
 
   function projectWeaponCurves(item) {
