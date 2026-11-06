@@ -114,11 +114,16 @@
           if (c.interpolation === 'unknown' || c.knots.some(k => k.output === null)) check(c.unknown !== null, 'curve unknown');
           if (c.knots.every(k => k.output !== null)) {
             check(Array.isArray(c.knots[0].output) === Array.isArray(c.knots[1].output), 'curve output types');
-            if (Array.isArray(c.knots[0].output)) check(c.knots[0].output.length > 0 && c.knots[0].output.length === c.knots[1].output.length, 'curve array lengths');
+            if (Array.isArray(c.knots[0].output)) check(c.knots[0].output.length === c.knots[1].output.length, 'curve array lengths');
           }
         });
         check(new Set(v.curves.map(c => c.id)).size === v.curves.length, 'curve ids');
-        for (const b of v.bars) for (const stat of b.stats) check(v.curves.some(c => c.id === stat.curveId && c.bar === b.id && c.stat === stat.key), 'curve reference');
+        const stats = v.bars.flatMap(b => b.stats.map(stat => ({ bar: b.id, stat })));
+        for (const c of v.curves) {
+          check(c.id === c.bar + '.' + c.stat, 'curve id');
+          check(stats.filter(x => x.stat.curveId === c.id && x.bar === c.bar && x.stat.key === c.stat).length === 1, 'curve reference');
+        }
+        for (const { bar, stat } of stats) check(v.curves.filter(c => c.id === stat.curveId && c.bar === bar && c.stat === stat.key).length === 1, 'stat reference');
         array(v.attackCombos, c => {
           object(c, ['id','kind','start','steps','loopsTo','unknown','source']); string(c.id); enumeration(c.kind, ['light','heavy']); string(c.start); nullable(c.unknown); location(c.source);
           array(c.steps, step => { object(step, ['action','input','name','damageProfile','damageProfileUnknown']); string(step.action); string(step.input); bilingual(step.name); nullable(step.damageProfile); nullable(step.damageProfileUnknown); });

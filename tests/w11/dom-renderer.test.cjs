@@ -49,3 +49,18 @@ test('UnitT40_一點一曲線與連段渲染且unknown隱藏', () => {
  const y=fixture11(); for(const w of y.weapons.items) { for(const c of w.values.curves) {c.interpolation='unknown'; c.unknown='DYNAMIC_VALUE';} for(const c of w.values.attackCombos) c.unknown='DYNAMIC_VALUE'; }
  const {current:cur,...docs}=y; const [f]=p.buildWeaponFamilyViewModels(contract.validateSnapshot({current:cur,documents:docs})); const hidden=a.makeWeaponPanel(document,f,f.marks[0]); assert.doesNotMatch(hidden.textContent,/屬性曲線|攻擊組合/);
 });
+// Scenario: valid array endpoints are empty and a known combo has no steps. Purpose: accept the snapshot while hiding sections with no displayable data.
+test('UnitT50_空曲線輸出與空連段不渲染', () => {
+ const {fixture11}=require('../helpers/source-data-fixture-11.cjs'); const contract=require('../../extension/shared/source-data-contract.js');
+ const x=fixture11(); for(const w of x.weapons.items) { for(const c of w.values.curves) for(const k of c.knots) k.output=[]; for(const c of w.values.attackCombos) {c.steps=[]; c.loopsTo=null;} }
+ const {current,...documents}=x; const verified=contract.validateSnapshot({current,documents});
+ const [family]=p.buildWeaponFamilyViewModels(verified), mark=family.marks[0]; const panel=a.makeWeaponPanel(createDocument(),family,mark);
+ assert.equal(mark.curves,null); assert.equal(mark.attackCombos,null); assert.doesNotMatch(panel.textContent,/屬性曲線|攻擊組合/);
+});
+// Scenario: a known combo has no attack steps. Purpose: hide its section when no combo remains.
+test('UnitT60_空步驟連段不渲染', () => {
+ const {fixture11}=require('../helpers/source-data-fixture-11.cjs'); const contract=require('../../extension/shared/source-data-contract.js');
+ const x=fixture11(); for(const w of x.weapons.items) for(const c of w.values.attackCombos) {c.steps=[]; c.loopsTo=null;}
+ const {current,...documents}=x; const [family]=p.buildWeaponFamilyViewModels(contract.validateSnapshot({current,documents}));
+ assert.equal(family.marks[0].attackCombos,null); assert.doesNotMatch(a.makeWeaponPanel(createDocument(),family,family.marks[0]).textContent,/攻擊組合/);
+});

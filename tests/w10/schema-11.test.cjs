@@ -10,3 +10,14 @@ test('UnitT20_拒絕主版變更缺漏未知欄位及錯誤參照', async () => 
  const old=fixture(); old.weapons.items[0].values.curves=[]; assert.throws(()=>validate(old));
  const future=fixture11(); for(const d of Object.values(future)) d.schemaVersion='1.2.0'; assert.doesNotThrow(()=>validate(future));
 });
+// Scenario: curves and stats have inconsistent identities or cardinality. Purpose: reject the entire snapshot in both directions.
+test('UnitT30_拒絕曲線與屬性非一一對應', () => {
+ const cases = [
+  v => v.curves.push({...structuredClone(v.curves[0]), id: 'extra.stat', bar: 'extra', stat: 'stat'}),
+  v => v.curves.push({...structuredClone(v.curves[0]), id: v.curves[0].id + '.extra'}),
+  v => { v.curves[0].bar = 'other'; },
+  v => { v.curves[0].id = 'arbitrary'; v.bars[0].stats[0].curveId = 'arbitrary'; },
+  v => v.bars[0].stats.push(structuredClone(v.bars[0].stats[0]))
+ ];
+ for (const mutate of cases) { const x=fixture11(); mutate(x.weapons.items[0].values); assert.throws(()=>validate(x)); }
+});
