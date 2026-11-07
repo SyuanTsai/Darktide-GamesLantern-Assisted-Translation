@@ -1,0 +1,197 @@
+[
+  {
+    "weaponId": "darktide:weapon:combataxe_p1_m1",
+    "values": {
+      "damageProfiles": [
+        {
+          "id": "default_light_axe",
+          "distributions": [
+            {
+              "target": 1,
+              "range": null,
+              "attack": {
+                "kind": "lerp",
+                "min": 140,
+                "max": 280,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 402
+                }
+              },
+              "impact": {
+                "kind": "lerp",
+                "min": 8,
+                "max": 16,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 406
+                }
+              }
+            },
+            {
+              "target": 2,
+              "range": null,
+              "attack": {
+                "kind": "lerp",
+                "min": 100,
+                "max": 200,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 422
+                }
+              },
+              "impact": {
+                "kind": "lerp",
+                "min": 7,
+                "max": 14,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 426
+                }
+              }
+            },
+            {
+              "target": "default",
+              "range": null,
+              "attack": {
+                "kind": "lerp",
+                "min": 80,
+                "max": 160,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 439
+                }
+              },
+              "impact": {
+                "kind": "lerp",
+                "min": 6,
+                "max": 12,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+                  "line": 443
+                }
+              }
+            }
+          ],
+          "bindings": [
+            {
+              "action": "action_left_down_light",
+              "kind": "action",
+              "template": null,
+              "source": {
+                "path": "scripts/settings/equipment/weapon_templates/combat_axes/combataxe_p1_m1.lua",
+                "line": 247
+              }
+            },
+            {
+              "action": "action_right_diagonal_light",
+              "kind": "action",
+              "template": null,
+              "source": {
+                "path": "scripts/settings/equipment/weapon_templates/combat_axes/combataxe_p1_m1.lua",
+                "line": 477
+              }
+            },
+            {
+              "action": "action_left_light",
+              "kind": "action",
+              "template": null,
+              "source": {
+                "path": "scripts/settings/equipment/weapon_templates/combat_axes/combataxe_p1_m1.lua",
+                "line": 700
+              }
+            }
+          ],
+          "unknown": null,
+          "source": {
+            "path": "scripts/settings/equipment/weapon_templates/combat_axes/settings_templates/combat_axe_damage_profile_templates.lua",
+            "line": 363
+          }
+        }
+      ]
+    }
+  },
+  {
+    "weaponId": "darktide:weapon:autogun_p1_m1",
+    "values": {
+      "damageProfiles": [
+        {
+          "id": "default_autogun_assault",
+          "distributions": [
+            {
+              "target": null,
+              "range": null,
+              "attack": {
+                "kind": "lerp",
+                "min": 60,
+                "max": 120,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_damage_profile_templates.lua",
+                  "line": 91
+                }
+              },
+              "impact": {
+                "kind": "lerp",
+                "min": 2,
+                "max": 6,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_damage_profile_templates.lua",
+                  "line": 95
+                }
+              }
+            }
+          ],
+          "bindings": [
+            {
+              "action": "action_shoot_hip",
+              "kind": "hitScan",
+              "template": "autogun_p1_m1_bullet",
+              "powerLevel": {
+                "value": 700,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_hitscan_templates.lua",
+                  "line": 28
+                }
+              },
+              "source": {
+                "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_hitscan_templates.lua",
+                "line": 32
+              }
+            },
+            {
+              "action": "action_shoot_zoomed",
+              "kind": "hitScan",
+              "template": "autogun_p1_m1_bullet",
+              "powerLevel": {
+                "value": 700,
+                "unknown": null,
+                "source": {
+                  "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_hitscan_templates.lua",
+                  "line": 28
+                }
+              },
+              "source": {
+                "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_hitscan_templates.lua",
+                "line": 32
+              }
+            }
+          ],
+          "unknown": null,
+          "source": {
+            "path": "scripts/settings/equipment/weapon_templates/autoguns/settings_templates/autogun_damage_profile_templates.lua",
+            "line": 26
+          }
+        }
+      ]
+    }
+  }
+]
