@@ -126,3 +126,5 @@
 .w11-extension-blessing-description {
   margin-block: 0.5rem;
 }
+.glat-errata-mark { background: rgba(220, 190, 100, 0.25); color: inherit; }
+.glat-errata-note { font-size: 0.85em; opacity: 0.8; }

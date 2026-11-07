@@ -6,8 +6,7 @@ const workerApi = require('../../extension/shared/service-worker.js');
 
 const EXTENSION_ID = 'abcdefghijklmnopabcdefghijklmnop';
 const GAME_ORIGIN = 'https://darktide.gameslantern.com';
-const IDENTITY = Object.freeze({ gameVersion: '1.13.2', gameReleaseId: 'darktide:1.13.2',
-  snapshotId: 'psyker-skills-blessings-1.13.2-18-files' });
+const IDENTITY = Object.freeze({ untrusted: true });
 
 function gameSender(overrides = {}) {
   return {
@@ -42,19 +41,17 @@ test('UnitT10_MessageHandlerAcceptsOnlyLocalExtensionOrTrustedTopFrameRoute', as
 
   let received = null;
   const handler = workerApi.createMessageHandler({ runtime: { id: EXTENSION_ID }, coordinator: {
-    async getSnapshot(identity, options) {
-      received = { identity, options };
-      return { status: 'original', source: 'original', identity, snapshot: null, reason: 'no-compatible-release' };
+    async getSnapshot(options) {
+      received = { options };
+      return { status: 'original', source: 'original', identity: null, snapshot: null, reason: 'no-compatible-release' };
     }
   } });
   let response;
-  const keepAlive = handler({ type: workerApi.MESSAGE_TYPE, identity: IDENTITY, active: true, manual: false },
+  const keepAlive = handler({ type: workerApi.MESSAGE_TYPE, active: true, manual: false },
     gameSender(), (value) => { response = value; });
   assert.equal(keepAlive, true);
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(received.identity.snapshotId, IDENTITY.snapshotId);
-  assert.deepEqual(received.options, { active: true, manual: false,
-    page: { pathname: '/abilities/brain-rupture' } });
+  assert.deepEqual(received.options, { active: true, manual: false });
   assert.equal(response.ok, true);
   assert.equal(response.result.source, 'original');
 });

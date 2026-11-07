@@ -57,17 +57,19 @@
   }
 
   function normalizeSkillObservation(observation) {
-    exactKeys(observation, ['structure', 'name', 'description'], 'native ability observation');
+    exactKeys(observation, ['structure', 'name', 'description', ...(observation.gameslanternId === undefined ? [] : ['gameslanternId'])], 'native ability observation');
+    if (observation.gameslanternId !== undefined && (typeof observation.gameslanternId !== 'string' || !observation.gameslanternId)) throw new TypeError('invalid observed ID');
     if (!['gameslantern-ability-card-v1', 'gameslantern-ability-detail-v1'].includes(observation.structure)
       || typeof observation.name !== 'string' || !observation.name.trim()
       || typeof observation.description !== 'string' || !observation.description.trim()) {
       throw new TypeError('native ability observation is incomplete');
     }
-    return { structure: observation.structure, name: observation.name, description: observation.description };
+    return { structure: observation.structure, name: observation.name, description: observation.description, ...(observation.gameslanternId === undefined ? {} : {gameslanternId: observation.gameslanternId}) };
   }
 
   function normalizeWeaponObservation(observation) {
-    exactKeys(observation, ['structure', 'href', 'title', 'mirrorTitle', 'imageAlt', 'imageSrc'], 'native weapon observation');
+    exactKeys(observation, ['structure', 'href', 'title', 'mirrorTitle', 'imageAlt', 'imageSrc', ...(observation.gameslanternId === undefined ? [] : ['gameslanternId'])], 'native weapon observation');
+    if (observation.gameslanternId !== undefined && (typeof observation.gameslanternId !== 'string' || !observation.gameslanternId)) throw new TypeError('invalid observed ID');
     if (observation.structure !== 'gameslantern-weapon-detail-v1' || typeof observation.href !== 'string'
       || typeof observation.title !== 'string' || typeof observation.mirrorTitle !== 'string'
       || observation.imageAlt !== 'Header Image' || typeof observation.imageSrc !== 'string') {
@@ -84,7 +86,7 @@
       throw new TypeError('native weapon observation escaped its supported page or image shape');
     }
     return { structure: observation.structure, route: page.pathname, title: observation.title,
-      mirrorTitle: observation.mirrorTitle, imageAlt: observation.imageAlt, imagePath: image.pathname };
+      mirrorTitle: observation.mirrorTitle, imageAlt: observation.imageAlt, imagePath: image.pathname, ...(observation.gameslanternId === undefined ? {} : {gameslanternId: observation.gameslanternId}) };
   }
 
   function utf8Bytes(value) {
@@ -158,13 +160,15 @@
     return getNativeSnapshotBytes;
   }
 
+  function identityText(identity) {
+    return identity.gameVersion + '／' + identity.sourceCommit.slice(0, 7) + '／' + identity.textBatch;
+  }
+
   function stateText(state, lastClientResult) {
     if (state && state.reason && PATCH_CHANGED_EVIDENCE[state.reason]) return PATCH_CHANGED_EVIDENCE[state.reason];
     if (state && state.status === 'ready' && lastClientResult && lastClientResult.status === 'ready') {
-      const contentVersion = lastClientResult.snapshot && lastClientResult.snapshot.manifest
-        && lastClientResult.snapshot.manifest.contentVersion;
-      if (typeof contentVersion === 'string' && contentVersion.trim()) {
-        return '使用本機資料版本 ' + contentVersion + '；只翻譯與資料逐項相符的原文。';
+      if (lastClientResult.snapshot?.identity) {
+        return '使用本機資料版本 ' + identityText(lastClientResult.snapshot.identity) + '；只翻譯與資料逐項相符的原文。';
       }
       return lastClientResult.statusText || clientApi.getStatusText(lastClientResult);
     }
@@ -214,12 +218,10 @@
     const proofs = registry && Array.isArray(registry.proofs) ? registry.proofs : [];
     const rawClient = clientApi.createW10Client({ runtime: pageRoot.chrome.runtime, location: pageRoot.location });
     const testProofMode = !!(registry && Array.isArray(registry.proofs));
-    const productionPin = pageRoot.W16ProductionDatasetPin;
-    const identityResolver = !testProofMode && productionPin && productionDatasetApi
+    const identityResolver = !testProofMode && productionDatasetApi
       && typeof productionDatasetApi.createProductionDatasetResolver === 'function'
       ? productionDatasetApi.createProductionDatasetResolver({
-        pin: productionPin,
-        loadSnapshot: (identity) => rawClient.initialize(identity),
+        loadSnapshot: () => rawClient.initialize(),
         presentationApi
       })
       : identityApi.createNativeIdentityResolver({ proofs, cryptoApi: pageRoot.crypto });
@@ -268,8 +270,8 @@
           ui.controls.classList.add('w11-extension-controls-with-reader');
           const note = document.createElement('p');
           note.setAttribute('data-w11-blessing-reader-source', '');
-          const contentVersion = snapshot.manifest && snapshot.manifest.contentVersion;
-          note.textContent = '本機資料版本 ' + contentVersion + '；獨立閱讀器，未驗證此頁原生祝福或階級適用性。';
+          const versionText = identityText(snapshot.identity);
+          note.textContent = '本機資料版本 ' + versionText + '；獨立閱讀器，未驗證此頁原生祝福或階級適用性。';
           blessingReader.element.insertBefore(note, blessingReader.element.children[1] || null);
         }
         (independent ? ui.controls : (document.body || document.documentElement)).append(blessingReader.element);
@@ -339,7 +341,7 @@
 
     const client = Object.freeze({
       async initialize(identity, options) {
-        lastClientResult = await rawClient.initialize(identity, options);
+        lastClientResult = await rawClient.initialize(options);
         renderStatus(currentState);
         return lastClientResult;
       }
@@ -415,5 +417,5 @@
       controls: ui.controls, dispose });
   }
 
-  return Object.freeze({ createNativeEvidenceProvider, isSupportedPage, serializeNativeSnapshot, startPage });
+  return Object.freeze({ createNativeEvidenceProvider, isSupportedPage, serializeNativeSnapshot, startPage, identityText, stateText });
 });

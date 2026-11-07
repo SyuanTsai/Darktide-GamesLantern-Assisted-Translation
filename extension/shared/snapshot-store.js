@@ -7,17 +7,13 @@
 })(typeof globalThis === 'object' ? globalThis : this, function (loader) {
   'use strict';
 
-  const DATABASE_NAME = 'darktide-w10-shared-snapshots-v1';
+  const DATABASE_NAME = 'darktide-w10-source-data-snapshots-v1';
   const DATABASE_VERSION = 1;
   const STORE_NAMES = Object.freeze({
     control: 'control',
     snapshots: 'snapshots',
     staging: 'staging'
   });
-  const GAME_VERSION_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
-  const GAME_RELEASE_ID_PATTERN = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
-  const SNAPSHOT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
-
   function makeError(message, code, cause) {
     const error = new Error(message);
     if (code) error.code = code;
@@ -33,49 +29,19 @@
     return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 
-  function normalizeIdentity(identity) {
-    if (!isRecord(identity)) fail('trusted identity must be an object', 'INVALID_IDENTITY');
-    const keys = Object.keys(identity).sort();
-    if (keys.some((key) => !['gameReleaseId', 'gameVersion', 'snapshotId'].includes(key))
-      || !keys.includes('gameReleaseId') || !keys.includes('gameVersion')) {
-      fail('trusted identity must contain gameVersion and gameReleaseId, with optional snapshotId', 'INVALID_IDENTITY');
-    }
-    if (typeof identity.gameVersion !== 'string' || !GAME_VERSION_PATTERN.test(identity.gameVersion)) {
-      fail('trusted identity.gameVersion is invalid', 'INVALID_IDENTITY');
-    }
-    if (typeof identity.gameReleaseId !== 'string' || !GAME_RELEASE_ID_PATTERN.test(identity.gameReleaseId)) {
-      fail('trusted identity.gameReleaseId is invalid', 'INVALID_IDENTITY');
-    }
-    if (identity.snapshotId !== undefined
-      && (typeof identity.snapshotId !== 'string' || !SNAPSHOT_ID_PATTERN.test(identity.snapshotId))) {
-      fail('trusted identity.snapshotId is invalid', 'INVALID_IDENTITY');
-    }
-    return Object.freeze({
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
-      ...(identity.snapshotId === undefined ? {} : { snapshotId: identity.snapshotId })
-    });
-  }
-
-  function scopeKey(identity) {
-    return JSON.stringify([identity.gameVersion, identity.gameReleaseId]);
-  }
-
-  function sameScope(left, right) {
-    return !!left && !!right && left.gameVersion === right.gameVersion && left.gameReleaseId === right.gameReleaseId;
-  }
-
-  function sameIdentity(left, right) {
-    return sameScope(left, right) && left.snapshotId === right.snapshotId;
-  }
+  // All versions share one atomic active/previous scope. No caller-supplied game identity.
+  function normalizeIdentity() { return 'source-data'; }
+  function scopeKey() { return 'source-data'; }
+  function sameScope(a, b) { return a === 'source-data' && b === 'source-data'; }
+  function sameIdentity(a, b) { return sameScope(a, b); }
 
   function normalizeCheckToken(checkToken, identity) {
     if (!isRecord(checkToken) || !Number.isSafeInteger(checkToken.generation) || checkToken.generation < 1
       || !(checkToken.expectedActiveKey === null || typeof checkToken.expectedActiveKey === 'string')) {
       fail('check token is malformed', 'INVALID_CHECK');
     }
-    const tokenIdentity = normalizeIdentity(checkToken.identity);
-    if (!sameIdentity(tokenIdentity, identity)) fail('check token identity differs from the trusted identity', 'INVALID_CHECK');
+    const tokenIdentity = checkToken.identity;
+    if (!sameIdentity(tokenIdentity, identity)) fail('check token identity differs from the source-data scope', 'INVALID_CHECK');
     return Object.freeze({
       generation: checkToken.generation,
       expectedActiveKey: checkToken.expectedActiveKey,
@@ -86,8 +52,6 @@
   function newState(identity) {
     return {
       id: scopeKey(identity),
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
       generation: 0,
       latestCheck: null,
       activeKey: null,
@@ -133,7 +97,6 @@
   function normalizeState(value, identity) {
     if (value === undefined) return newState(identity);
     if (!isRecord(value) || value.id !== scopeKey(identity)
-      || value.gameVersion !== identity.gameVersion || value.gameReleaseId !== identity.gameReleaseId
       || !Number.isSafeInteger(value.generation) || value.generation < 0
       || !(value.activeKey === null || typeof value.activeKey === 'string')
       || !(value.previousKey === null || typeof value.previousKey === 'string')) {
@@ -144,7 +107,7 @@
         || !(value.latestCheck.expectedActiveKey === null || typeof value.latestCheck.expectedActiveKey === 'string')) {
         fail('W10 IndexedDB check generation is corrupt', 'IDB_CORRUPT');
       }
-      if (!sameScope(normalizeIdentity(value.latestCheck.identity), identity)) {
+      if (!sameScope(value.latestCheck.identity, identity)) {
         fail('W10 IndexedDB check identity is in the wrong release scope', 'IDB_CORRUPT');
       }
       if (typeof value.latestCheck.expectedActiveKey === 'string'
@@ -158,13 +121,11 @@
     }
     return {
       id: scopeKey(identity),
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
       generation: value.generation,
       latestCheck: value.latestCheck ? {
         generation: value.latestCheck.generation,
         expectedActiveKey: value.latestCheck.expectedActiveKey,
-        identity: normalizeIdentity(value.latestCheck.identity)
+        identity: value.latestCheck.identity
       } : null,
       activeKey: value.activeKey,
       previousKey: value.previousKey,
@@ -182,48 +143,21 @@
       && sameIdentity(token.identity, identity);
   }
 
-  function snapshotKey(identity, manifestSha256) {
-    return JSON.stringify([identity.gameVersion, identity.gameReleaseId, manifestSha256]);
+  function snapshotKey(identity, digest) {
+    return JSON.stringify(['source-data', identity.gameVersion, identity.sourceCommit, identity.textBatch, digest]);
   }
-
-  function stagingKey(token, manifestSha256) {
-    return JSON.stringify([scopeKey(token.identity), token.generation, manifestSha256]);
-  }
-
-  function snapshotKeyBelongsToScope(key, identity) {
-    if (typeof key !== 'string') return false;
+  function stagingKey(token, digest) { return JSON.stringify(['source-data', token.generation, digest]); }
+  function snapshotKeyBelongsToScope(key) {
     try {
-      const parts = JSON.parse(key);
-      return Array.isArray(parts) && parts.length === 3
-        && parts[0] === identity.gameVersion && parts[1] === identity.gameReleaseId;
-    } catch (_) {
-      return false;
-    }
+      const p = JSON.parse(key);
+      return p.length === 5 && p[0] === 'source-data' && /^[0-9]+(\.[0-9]+){1,3}$/.test(p[1])
+        && /^[a-fA-F0-9]{40}$/.test(p[2]) && /^[A-Za-z0-9._-]{1,128}$/.test(p[3]) && /^[a-f0-9]{64}$/.test(p[4]);
+    } catch (_) { return false; }
   }
-
-  function stagingKeyBelongsToScope(key, identity) {
-    if (typeof key !== 'string') return false;
-    try {
-      const parts = JSON.parse(key);
-      return Array.isArray(parts) && parts.length === 3 && parts[0] === scopeKey(identity);
-    } catch (_) {
-      return false;
-    }
-  }
-
+  function stagingKeyBelongsToScope(key) { return parseStagingKey(key) !== null; }
   function parseStagingKey(key) {
-    if (typeof key !== 'string') return null;
-    try {
-      const parts = JSON.parse(key);
-      if (!Array.isArray(parts) || parts.length !== 3 || typeof parts[0] !== 'string'
-        || !Number.isSafeInteger(parts[1]) || parts[1] < 1) return null;
-      const scopeParts = JSON.parse(parts[0]);
-      if (!Array.isArray(scopeParts) || scopeParts.length !== 2
-        || typeof scopeParts[0] !== 'string' || typeof scopeParts[1] !== 'string') return null;
-      return { scopeId: parts[0], generation: parts[1] };
-    } catch (_) {
-      return null;
-    }
+    try { const p = JSON.parse(key); return p.length === 3 && p[0] === 'source-data' && Number.isSafeInteger(p[1])
+      ? { scopeId: p[0], generation: p[1] } : null; } catch (_) { return null; }
   }
 
   function bytes(value, label) {
@@ -233,15 +167,9 @@
   }
 
   function copyVerifiedSnapshot(verified, key) {
-    return {
-      snapshotKey: key,
-      gameVersion: verified.identity.gameVersion,
-      gameReleaseId: verified.identity.gameReleaseId,
-      manifestSha256: verified.manifestSha256,
-      versionBytes: bytes(verified.versionBytes, 'versionBytes'),
-      manifestBytes: bytes(verified.manifestBytes, 'manifestBytes'),
-      files: [...verified.files].map(([filePath, raw]) => [filePath, bytes(raw, 'file ' + filePath)])
-    };
+    return { snapshotKey: key, identity: { ...verified.identity }, digest: verified.digest,
+      currentBytes: bytes(verified.currentBytes, 'current'),
+      files: Object.fromEntries(Object.entries(verified.files).map(([k, raw]) => [k, bytes(raw, k)])) };
   }
 
   function requestResult(request) {
@@ -345,8 +273,8 @@
       openPromise = null;
     }
 
-    async function beginCheck(trustedIdentity, { attemptAt } = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function beginCheck({ attemptAt } = {}) {
+      const identity = normalizeIdentity();
       const startedAt = attemptAt === undefined ? null : normalizeTimestamp(attemptAt, 'attemptAt');
       const db = await openDatabase();
       return runTransaction(db, [STORE_NAMES.control, STORE_NAMES.staging], 'readwrite', 'begin check', (transaction, context) => {
@@ -379,8 +307,8 @@
       });
     }
 
-    async function getUpdateState(trustedIdentity) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function getUpdateState() {
+      const identity = normalizeIdentity();
       const db = await openDatabase();
       return runTransaction(db, STORE_NAMES.control, 'readonly', 'read update schedule', (transaction, context) => {
         const get = transaction.objectStore(STORE_NAMES.control).get(scopeKey(identity));
@@ -392,8 +320,8 @@
       });
     }
 
-    async function recordCheckSuccess({ checkToken, identity: trustedIdentity, successAt } = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function recordCheckSuccess({ checkToken, successAt } = {}) {
+      const identity = normalizeIdentity();
       const token = normalizeCheckToken(checkToken, identity);
       const completedAt = normalizeTimestamp(successAt, 'successAt');
       const db = await openDatabase();
@@ -420,8 +348,8 @@
       });
     }
 
-    async function recordCheckFailure({ checkToken, identity: trustedIdentity, failedAt, nextRetryAt } = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function recordCheckFailure({ checkToken, failedAt, nextRetryAt } = {}) {
+      const identity = normalizeIdentity();
       const token = normalizeCheckToken(checkToken, identity);
       const completedAt = normalizeTimestamp(failedAt, 'failedAt');
       const retryAt = normalizeTimestamp(nextRetryAt, 'nextRetryAt');
@@ -469,22 +397,10 @@
         });
         if (!record) continue;
         try {
-          if (!record || typeof record !== 'object' || !Array.isArray(record.files)) continue;
-          const rawFiles = new Map(record.files.map((entry) => {
-            if (!Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string') {
-              fail('stored raw file row is corrupt', 'IDB_CORRUPT');
-            }
-            return [entry[0], bytes(entry[1], 'stored file ' + entry[0])];
-          }));
-          const verified = await loader.verifyStoredSnapshot({
-            versionBytes: bytes(record.versionBytes, 'stored versionBytes'),
-            manifestBytes: bytes(record.manifestBytes, 'stored manifestBytes'),
-            files: rawFiles,
-            identity,
-            cryptoApi
-          });
-          const expectedKey = snapshotKey(identity, verified.manifestSha256);
-          if (expectedKey !== key || record.snapshotKey !== key) continue;
+          const verified = await loader.verifyStoredSnapshot({ currentBytes: record.currentBytes, files: record.files, cryptoApi });
+          const expectedKey = snapshotKey(verified.identity, verified.digest);
+          if (expectedKey !== key || record.snapshotKey !== key || record.digest !== verified.digest
+            || !loader.sameIdentity(record.identity, verified.identity)) continue;
           candidates.push({ source, snapshotKey: key, snapshot: verified });
         } catch (_) {
           // Stored identity and parsed values are untrusted; invalid active data can fall back to previous.
@@ -494,22 +410,17 @@
         previous: candidates.find((candidate) => candidate.source === 'previous') ?? null };
     }
 
-    async function readSnapshot(trustedIdentity) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function readSnapshot() {
+      const identity = normalizeIdentity();
       const pointers = await inspectValidPointers(identity);
       return pointers.active || pointers.previous || null;
     }
 
     async function stageSnapshot(snapshot, identity, token) {
-      const verified = await loader.verifyStoredSnapshot({
-        versionBytes: snapshot && snapshot.versionBytes,
-        manifestBytes: snapshot && snapshot.manifestBytes,
-        files: snapshot && snapshot.files,
-        identity,
-        cryptoApi
-      });
-      const key = snapshotKey(identity, verified.manifestSha256);
-      const stageKey = stagingKey(token, verified.manifestSha256);
+      const verified = await loader.verifyStoredSnapshot({ currentBytes: snapshot && snapshot.currentBytes,
+        files: snapshot && snapshot.files, cryptoApi });
+      const key = snapshotKey(verified.identity, verified.digest);
+      const stageKey = stagingKey(token, verified.digest);
       const record = copyVerifiedSnapshot(verified, key);
       record.stageKey = stageKey;
       record.generation = token.generation;
@@ -552,7 +463,7 @@
                   if (requestResult(stagedRequest) === undefined) fail('staged snapshot is missing', 'IDB_CORRUPT');
                   // The staging row is only an existence check. Its raw bytes and metadata are untrusted.
                   const record = staged.record;
-                  if (!record || record.snapshotKey !== staged.key || staged.stageKey !== stagingKey(token, record.manifestSha256)) {
+                  if (!record || record.snapshotKey !== staged.key || staged.stageKey !== stagingKey(token, record.digest)) {
                     fail('verified in-memory staged snapshot is inconsistent', 'IDB_CORRUPT');
                   }
                   const newestKey = staged.key;
@@ -567,15 +478,7 @@
                   const keyList = snapshots.getAllKeys();
                   requestFailure(keyList, transaction, context, 'list stored snapshots');
                   keyList.onsuccess = () => {
-                    snapshots.put({
-                      snapshotKey: record.snapshotKey,
-                      gameVersion: record.gameVersion,
-                      gameReleaseId: record.gameReleaseId,
-                      manifestSha256: record.manifestSha256,
-                      versionBytes: record.versionBytes,
-                      manifestBytes: record.manifestBytes,
-                      files: record.files
-                    });
+                    snapshots.put(copyVerifiedSnapshot(staged.verified, staged.key));
                     for (const existingKey of requestResult(keyList)) {
                       if (snapshotKeyBelongsToScope(existingKey, identity)
                         && existingKey !== newestKey && existingKey !== previousKey) snapshots.delete(existingKey);
@@ -630,8 +533,8 @@
       }
     }
 
-    async function commitSnapshot({ checkToken, identity: trustedIdentity, snapshot, completedAt } = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function commitSnapshot({ checkToken, snapshot, completedAt } = {}) {
+      const identity = normalizeIdentity();
       const token = normalizeCheckToken(checkToken, identity);
       const committedAt = completedAt === undefined ? null : normalizeTimestamp(completedAt, 'completedAt');
       const staged = await stageSnapshot(snapshot, identity, token);
@@ -667,17 +570,7 @@
                   const statesByScope = new Map();
                   const protectedSnapshots = new Set();
                   for (const row of requestResult(controlsRequest)) {
-                    if (row && row.id === 'control') {
-                      control.delete('control');
-                      continue;
-                    }
-                    if (!isRecord(row) || typeof row.gameVersion !== 'string' || typeof row.gameReleaseId !== 'string') {
-                      fail('W10 IndexedDB cleanup encountered an invalid scope record', 'IDB_CORRUPT');
-                    }
-                    const identity = normalizeIdentity({
-                      gameVersion: row.gameVersion,
-                      gameReleaseId: row.gameReleaseId
-                    });
+                    const identity = normalizeIdentity();
                     const state = normalizeState(row, identity);
                     statesByScope.set(state.id, state);
                     if (state.activeKey) protectedSnapshots.add(state.activeKey);

@@ -1,8 +1,7 @@
 'use strict';
 
 if (typeof importScripts === 'function' && typeof module === 'undefined') {
-  importScripts('contract.js', 'domains.js', 'loader.js', 'snapshot-store.js',
-    'update-coordinator.js', 'baseline-provider.js');
+  importScripts('source-data-contract.js', 'loader.js', 'snapshot-store.js', 'update-coordinator.js');
 }
 
 (function (root, factory) {
@@ -10,8 +9,7 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
   const api = factory(
     commonJs ? require('./loader.js') : root.W10SharedLoader,
     commonJs ? require('./snapshot-store.js') : root.W10SharedSnapshotStore,
-    commonJs ? require('./update-coordinator.js') : root.W10SharedUpdateCoordinator,
-    commonJs ? require('./baseline-provider.js') : root.W10SharedBaselineProvider
+    commonJs ? require('./update-coordinator.js') : root.W10SharedUpdateCoordinator
   );
   if (commonJs) module.exports = api;
   root.W10SharedServiceWorker = api;
@@ -21,21 +19,20 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     const store = root.W10SharedSnapshotStore.createSnapshotStore();
     const coordinator = root.W10SharedUpdateCoordinator.createUpdateCoordinator({
       store,
-      fetchImpl: root.fetch.bind(root),
-      baselineRawProvider: root.W10SharedBaselineProvider.createBaselineProvider()
+      fetchImpl: root.fetch.bind(root)
     });
     root.chrome.runtime.onMessage.addListener(api.createMessageHandler({
       runtime: root.chrome.runtime,
       coordinator
     }));
   }
-})(typeof globalThis === 'object' ? globalThis : this, function (loaderApi, storeApi, coordinatorApi, baselineApi) {
+})(typeof globalThis === 'object' ? globalThis : this, function (loaderApi, storeApi, coordinatorApi) {
   'use strict';
 
   const MESSAGE_TYPE = 'W10_GET_SNAPSHOT';
-  const GAME_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
-  const GAME_RELEASE_ID = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
-  const SNAPSHOT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
+  const FILE_MESSAGE_TYPE = 'W10_GET_SNAPSHOT_FILE';
+  // 32 MiB base64 約 42.7 MiB；預留 1 MiB 包裝仍低於 64 MiB。
+  if (4 * Math.ceil(loaderApi.LIMITS.fileBytes / 3) + 1024 * 1024 >= 64 * 1024 * 1024) throw new Error('message limit exceeded');
   const BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
   const GAME_ORIGIN = 'https://darktide.gameslantern.com';
 
@@ -49,19 +46,6 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     if (required.some((key) => !Object.hasOwn(value, key))) return false;
     const allowed = new Set(required.concat(optional));
     return keys.every((key) => allowed.has(key));
-  }
-
-  function normalizeIdentity(identity) {
-    if (!exactKeys(identity, ['gameVersion', 'gameReleaseId'], ['snapshotId'])
-      || typeof identity.gameVersion !== 'string' || !GAME_VERSION.test(identity.gameVersion)
-      || typeof identity.gameReleaseId !== 'string' || !GAME_RELEASE_ID.test(identity.gameReleaseId)
-      || (identity.snapshotId !== undefined
-        && (typeof identity.snapshotId !== 'string' || !SNAPSHOT_ID.test(identity.snapshotId)))) return null;
-    return Object.freeze({
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
-      ...(identity.snapshotId === undefined ? {} : { snapshotId: identity.snapshotId })
-    });
   }
 
   function validExtensionAddress(value, extensionId) {
@@ -96,11 +80,6 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     return validGamePageSender(sender);
   }
 
-  function pageForSender(sender) {
-    if (!validGamePageSender(sender)) return undefined;
-    return { pathname: new URL(sender.url).pathname };
-  }
-
   function bytesToBase64(value) {
     const bytes = value instanceof Uint8Array ? value : new Uint8Array(value);
     const encoded = [];
@@ -129,25 +108,13 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
     return encoded.join('');
   }
 
-  function serializeSnapshot(snapshot) {
-    if (!snapshot) return null;
-    return {
-      versionBytes: bytesToBase64(snapshot.versionBytes),
-      manifestBytes: bytesToBase64(snapshot.manifestBytes),
-      files: [...snapshot.files].map(([filePath, raw]) => [filePath, bytesToBase64(raw)])
-    };
-  }
-
   function serializeResult(result) {
-    return {
-      status: result.status,
-      source: result.source,
-      identity: result.identity,
-      updateStatus: result.updateStatus || null,
-      reason: result.reason || null,
+    const snapshot = result.snapshot;
+    return { status: result.status, source: result.source, identity: result.identity,
+      updateStatus: result.updateStatus || null, reason: result.reason || null,
       errorCode: result.error && result.error.code ? String(result.error.code) : null,
-      snapshot: serializeSnapshot(result.snapshot)
-    };
+      snapshot: snapshot ? { currentBytes: bytesToBase64(snapshot.currentBytes), digest: snapshot.digest,
+        sizes: Object.fromEntries(loaderApi.CATEGORIES.map(k => [k, snapshot.files[k].byteLength])) } : null };
   }
 
   function createMessageHandler({ runtime, coordinator } = {}) {
@@ -160,28 +127,27 @@ if (typeof importScripts === 'function' && typeof module === 'undefined') {
         sendResponse(errorResponse('UNTRUSTED_SENDER'));
         return false;
       }
-      if (!exactKeys(message, ['type', 'identity'], ['active', 'manual']) || message.type !== MESSAGE_TYPE
+      const isFile = message && message.type === FILE_MESSAGE_TYPE;
+      if (isFile ? (!exactKeys(message, ['type', 'category', 'identity', 'digest'], [])
+        || !loaderApi.CATEGORIES.includes(message.category) || typeof message.digest !== 'string'
+        || !/^[a-f0-9]{64}$/.test(message.digest) || !exactKeys(message.identity, ['schemaVersion','gameVersion','sourceCommit','textBatch'], []))
+        : (!exactKeys(message, ['type'], ['active', 'manual']) || message.type !== MESSAGE_TYPE
         || (message.active !== undefined && typeof message.active !== 'boolean')
-        || (message.manual !== undefined && typeof message.manual !== 'boolean')) {
-        sendResponse(errorResponse('INVALID_MESSAGE'));
-        return false;
+        || (message.manual !== undefined && typeof message.manual !== 'boolean'))) {
+        sendResponse(errorResponse('INVALID_MESSAGE')); return false;
       }
-      const identity = normalizeIdentity(message.identity);
-      if (!identity) {
-        sendResponse(errorResponse('INVALID_IDENTITY'));
-        return false;
-      }
-      Promise.resolve(coordinator.getSnapshot(identity, {
-        active: message.active === undefined ? true : message.active,
-        manual: message.manual === true,
-        ...(pageForSender(sender) === undefined ? {} : { page: pageForSender(sender) })
-      })).then((result) => sendResponse({ ok: true, result: serializeResult(result) }), (error) => {
-        sendResponse(errorResponse(error && error.code ? String(error.code) : 'UPDATE_FAILED'));
-      });
+      Promise.resolve(coordinator.getSnapshot(isFile ? { active: false, manual: false } : {
+        active: message.active === undefined ? true : message.active, manual: message.manual === true
+      })).then((result) => {
+        if (!isFile) return sendResponse({ ok: true, result: serializeResult(result) });
+        const snapshot = result.snapshot;
+        if (!snapshot || snapshot.digest !== message.digest || !loaderApi.sameIdentity(snapshot.identity, message.identity)) return sendResponse(errorResponse('SNAPSHOT_CHANGED'));
+        return sendResponse({ ok: true, identity: snapshot.identity, digest: snapshot.digest, category: message.category, bytes: bytesToBase64(snapshot.files[message.category]) });
+      }, (error) => sendResponse(errorResponse(error && error.code ? String(error.code) : 'UPDATE_FAILED')));
       return true;
     };
   }
 
-  return Object.freeze({ MESSAGE_TYPE, createMessageHandler, normalizeIdentity, serializeResult, trustedSender,
+  return Object.freeze({ MESSAGE_TYPE, FILE_MESSAGE_TYPE, createMessageHandler, serializeResult, trustedSender,
     supportedGamePath });
 });

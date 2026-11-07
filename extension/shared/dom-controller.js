@@ -11,18 +11,11 @@
   'use strict';
 
   function sameIdentity(left, right) {
-    return !!left && !!right && left.gameVersion === right.gameVersion
-      && left.gameReleaseId === right.gameReleaseId
-      && (left.snapshotId === undefined ? null : left.snapshotId)
-        === (right.snapshotId === undefined ? null : right.snapshotId);
+    return !!left && !!right && ['schemaVersion','gameVersion','sourceCommit','textBatch'].every(k => left[k] === right[k]);
   }
 
   function copyIdentity(value) {
-    return value ? Object.freeze({
-      gameVersion: value.gameVersion,
-      gameReleaseId: value.gameReleaseId,
-      ...(value.snapshotId === undefined ? {} : { snapshotId: value.snapshotId })
-    }) : null;
+    return value ? Object.freeze({ ...value }) : null;
   }
 
   function isOwnedChange(record) {
@@ -79,9 +72,21 @@
       try { onStatus(Object.freeze({ ...state })); } catch (_) { /* UI status listeners are optional. */ }
     }
 
+    function mutatePresentation(action) {
+      if (!observer) return action();
+      const pending = observer.takeRecords();
+      try { return action(); } finally {
+        observer.takeRecords();
+        if (pending.some((mutation) => !isOwnedChange(mutation))) {
+          refreshPatchObserver();
+          void scan();
+        }
+      }
+    }
+
     function restoreAll() {
       for (const [anchor, record] of records) {
-        dom.restore(record);
+        mutatePresentation(() => dom.restore(record));
         records.delete(anchor);
       }
     }
@@ -175,7 +180,7 @@
           !change.node.isConnected || change.node.nodeValue !== change.writtenValue);
         if (!entry || identityChanged || changed || !sourceStillMatches) {
           if (identityChanged) blockedSlots.set(anchor, record.identityKey);
-          dom.restore(record);
+          mutatePresentation(() => dom.restore(record));
           records.delete(anchor);
         }
       }
@@ -264,17 +269,19 @@
         let record = null;
         if (entry.kind === 'skill') {
           const observation = dom.observe(entry.slot);
-          const matches = models.filter((model) => presentationApi.matchesSkillObservation(model, observation));
+          const matches = presentationApi.findMatchingModels(models, observation, presentationApi.matchesSkillObservation);
           if (matches.length === 1) {
-            record = dom.applySkill(entry.slot, matches[0]);
+            record = mutatePresentation(() => dom.applySkill(entry.slot, matches[0]));
             if (record) { record.kind = 'skill'; record.model = matches[0]; }
           }
         } else {
           const observation = dom.observeWeapon(entry.slot);
-          const matches = weaponFamilies.flatMap((family) => family.marks.map((mark) => ({ family, mark })))
-            .filter(({ mark }) => presentationApi.matchesWeaponObservation(mark, observation));
+          const candidates = weaponFamilies.flatMap((family) => family.marks.map((mark) => ({ family, mark })));
+          const matchingMarks = presentationApi.findMatchingModels(candidates.map(row => row.mark), observation,
+            presentationApi.matchesWeaponObservation);
+          const matches = candidates.filter(row => matchingMarks.includes(row.mark));
           if (matches.length === 1) {
-            record = dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark, matches[0].family.marks);
+            record = mutatePresentation(() => dom.applyWeapon(entry.slot, matches[0].family, matches[0].mark, matches[0].family.marks));
             if (record) { record.kind = 'weapon'; record.mark = matches[0].mark; }
           }
         }
@@ -294,7 +301,10 @@
           scanAgain = false;
           await performScan();
         } while (scanAgain && !disposed && enabled && !stopped);
-      })().finally(() => { scanPromise = null; });
+      })().finally(() => {
+        scanPromise = null;
+        if (scanAgain && !disposed && enabled && !stopped) return scan();
+      });
       return scanPromise;
     }
 

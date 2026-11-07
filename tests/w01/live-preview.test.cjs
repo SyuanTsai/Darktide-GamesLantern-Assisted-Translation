@@ -118,7 +118,7 @@ function summarizePreviewRequest(request){
     networkError:request.networkError===true||Boolean(request.error),
     error:typeof request.error==='string'?request.error.slice(0,300):null};
 }
-function termLocalizations(bundle){
+function localizedTermRows(bundle){
   const document=JSON.parse(bundle.files.terms.bytes.toString('utf8'));
   const terms=document.records.filter(record=>record.owner==='source'&&record.kind==='term');
   assert.ok(terms.length>0,'Compiled package has no source term records');
@@ -479,7 +479,7 @@ test('InterT13_FixedPreviewUsesRealHttpsAndMatchesCompiledWebPackage',{
       if(await defaultTab.count()===1) await defaultTab.click();
       renderedTextSnapshots.push(await chainaxeCard.locator('[role="tabpanel"]').textContent());
     }
-    const localizedTerms=termLocalizations(expected);
+    const localizedTerms=localizedTermRows(expected);
     const referencedTermIds=new Set();
     for(const presentation of [...skillPresentations,...blessingPresentations,...weaponPresentations]){
       collectTermReferences(presentation.payload.detailSections,referencedTermIds);

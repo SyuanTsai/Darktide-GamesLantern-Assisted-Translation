@@ -6,10 +6,6 @@
 })(typeof globalThis === 'object' ? globalThis : this, function (presentationApi) {
   'use strict';
 
-  const SHA256 = /^[a-f0-9]{64}$/;
-  const GAME_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
-  const GAME_RELEASE_ID = /^[a-z0-9][a-z0-9._:-]{1,127}$/;
-  const CONTENT_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.([1-9][0-9]*)$/;
   const MAX_EVIDENCE_BYTES = 16 * 1024 * 1024;
 
   function exactKeys(value, expected, label) {
@@ -19,23 +15,6 @@
     if (actual.length !== keys.length || actual.some((key, index) => key !== keys[index])) {
       throw new TypeError(label + ' must contain exactly: ' + keys.join(', '));
     }
-  }
-
-  function normalizePin(value) {
-    exactKeys(value, ['schema', 'gameVersion', 'gameReleaseId', 'contentVersion', 'dataRevision', 'manifestSha256'],
-      'production dataset pin');
-    if (value.schema !== 'w16-production-dataset-pin/1'
-      || typeof value.gameVersion !== 'string' || !GAME_VERSION.test(value.gameVersion)
-      || typeof value.gameReleaseId !== 'string' || !GAME_RELEASE_ID.test(value.gameReleaseId)
-      || typeof value.contentVersion !== 'string' || !CONTENT_VERSION.test(value.contentVersion)
-      || value.contentVersion.slice(0, value.contentVersion.lastIndexOf('.')) !== value.gameVersion
-      || typeof value.dataRevision !== 'string' || !SHA256.test(value.dataRevision)
-      || typeof value.manifestSha256 !== 'string' || !SHA256.test(value.manifestSha256)) {
-      throw new TypeError('production dataset pin is invalid');
-    }
-    return Object.freeze({ schema: value.schema, gameVersion: value.gameVersion,
-      gameReleaseId: value.gameReleaseId, contentVersion: value.contentVersion,
-      dataRevision: value.dataRevision, manifestSha256: value.manifestSha256 });
   }
 
   function toBytes(value) {
@@ -60,17 +39,19 @@
   }
 
   function normalizeSkillObservation(value) {
-    exactKeys(value, ['structure', 'name', 'description'], 'native skill observation');
+    exactKeys(value, ['structure', 'name', 'description', ...(value.gameslanternId === undefined ? [] : ['gameslanternId'])], 'native skill observation');
+    if (value.gameslanternId !== undefined && (typeof value.gameslanternId !== 'string' || !value.gameslanternId)) throw new TypeError('invalid observed ID');
     if (!['gameslantern-ability-card-v1', 'gameslantern-ability-detail-v1'].includes(value.structure)
       || typeof value.name !== 'string' || !value.name.trim()
       || typeof value.description !== 'string' || !value.description.trim()) {
       throw new TypeError('native skill observation is incomplete');
     }
-    return Object.freeze({ structure: value.structure, name: value.name, description: value.description });
+    return Object.freeze({ structure: value.structure, name: value.name, description: value.description, ...(value.gameslanternId === undefined ? {} : {gameslanternId:value.gameslanternId}) });
   }
 
   function normalizeWeaponObservation(value) {
-    exactKeys(value, ['structure', 'route', 'title', 'mirrorTitle', 'imageAlt', 'imagePath'], 'native weapon observation');
+    exactKeys(value, ['structure', 'route', 'title', 'mirrorTitle', 'imageAlt', 'imagePath', ...(value.gameslanternId === undefined ? [] : ['gameslanternId'])], 'native weapon observation');
+    if (value.gameslanternId !== undefined && (typeof value.gameslanternId !== 'string' || !value.gameslanternId)) throw new TypeError('invalid observed ID');
     if (value.structure !== 'gameslantern-weapon-detail-v1'
       || typeof value.route !== 'string' || typeof value.title !== 'string'
       || typeof value.mirrorTitle !== 'string' || value.imageAlt !== 'Header Image'
@@ -83,6 +64,7 @@
     return Object.freeze({ structure: value.structure,
       href: 'https://darktide.gameslantern.com' + value.route,
       title: value.title, mirrorTitle: value.mirrorTitle, imageAlt: value.imageAlt,
+      ...(value.gameslanternId === undefined ? {} : {gameslanternId:value.gameslanternId}),
       imageSrc: 'https://darktide.gameslantern.com' + value.imagePath });
   }
 
@@ -109,23 +91,7 @@
       weapons: Object.freeze(value.weapons.map(normalizeWeaponObservation)) });
   }
 
-  function matchesPinnedSnapshot(result, pin, identity) {
-    const snapshot = result && result.snapshot;
-    const manifest = snapshot && snapshot.manifest;
-    return result && result.status === 'ready' && snapshot && manifest
-      && snapshot.identity && snapshot.identity.gameVersion === identity.gameVersion
-      && snapshot.identity.gameReleaseId === identity.gameReleaseId
-      && result.identity && result.identity.gameVersion === identity.gameVersion
-      && result.identity.gameReleaseId === identity.gameReleaseId
-      && manifest.gameVersion === pin.gameVersion && manifest.gameReleaseId === pin.gameReleaseId
-      && typeof manifest.contentVersion === 'string'
-      && manifest.contentVersion.startsWith(pin.gameVersion + '.')
-      && typeof manifest.dataRevision === 'string' && SHA256.test(manifest.dataRevision)
-      && typeof snapshot.manifestSha256 === 'string' && SHA256.test(snapshot.manifestSha256);
-  }
-
-  function createProductionDatasetResolver({ pin: rawPin, loadSnapshot, presentationApi: presentation = presentationApi } = {}) {
-    const pin = normalizePin(rawPin);
+  function createProductionDatasetResolver({ loadSnapshot, presentationApi: presentation = presentationApi } = {}) {
     if (typeof loadSnapshot !== 'function') throw new TypeError('production dataset resolver requires a verified snapshot loader');
     if (!presentation || typeof presentation.buildSkillViewModels !== 'function'
       || typeof presentation.buildWeaponFamilyViewModels !== 'function'
@@ -133,13 +99,13 @@
       || typeof presentation.matchesWeaponObservation !== 'function') {
       throw new TypeError('production dataset presentation functions are unavailable');
     }
-    const identity = Object.freeze({ gameVersion: pin.gameVersion, gameReleaseId: pin.gameReleaseId });
     let snapshotPromise = null;
 
     async function getPinnedSnapshot() {
       if (!snapshotPromise) {
-        snapshotPromise = Promise.resolve().then(() => loadSnapshot(identity)).then((result) =>
-          matchesPinnedSnapshot(result, pin, identity) ? result.snapshot : null, () => null);
+        snapshotPromise = Promise.resolve().then(() => loadSnapshot()).then((result) =>
+          result?.status === 'ready' && result.snapshot?.identity && result.snapshot.documents
+            && ['schemaVersion','gameVersion','sourceCommit','textBatch'].every(k=>result.identity?.[k]===result.snapshot.identity[k]) ? result.snapshot : null, () => null);
       }
       return snapshotPromise;
     }
@@ -162,19 +128,19 @@
       const weaponModels = Array.isArray(families)
         ? families.flatMap((family) => Array.isArray(family.marks)
           ? family.marks.map((mark) => ({ family, mark })) : []) : [];
-      const hasExactSkill = evidence.skills.some((observation) => skillModels.filter((model) =>
-        presentation.matchesSkillObservation(model, observation)).length === 1);
-      const hasExactWeapon = evidence.weapons.some((observation) => weaponModels.filter(({ mark }) =>
-        presentation.matchesWeaponObservation(mark, observation)).length === 1);
+      const hasExactSkill = evidence.skills.some((observation) => presentation.findMatchingModels(skillModels,
+        observation, presentation.matchesSkillObservation).length === 1);
+      const hasExactWeapon = evidence.weapons.some((observation) => presentation.findMatchingModels(
+        weaponModels.map(row => row.mark), observation, presentation.matchesWeaponObservation).length === 1);
       if (!hasExactSkill && !hasExactWeapon) {
         return Object.freeze({ status: 'unknown', reason: 'no-matching-presentation' });
       }
-      return Object.freeze({ status: 'verified', identity,
+      return Object.freeze({ status: 'verified', identity: Object.freeze({ ...snapshot.identity }),
         ...(evidence.patch.status === 'selected' ? { patchLabel: evidence.patch.label } : {}) });
     }
 
-    return Object.freeze({ resolve, loadPinnedSnapshotForReading: getPinnedSnapshot, pin, identity });
+    return Object.freeze({ resolve, loadPinnedSnapshotForReading: getPinnedSnapshot });
   }
 
-  return Object.freeze({ createProductionDatasetResolver, normalizePin, parseNativeEvidence });
+  return Object.freeze({ createProductionDatasetResolver, parseNativeEvidence });
 });

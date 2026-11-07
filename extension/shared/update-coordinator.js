@@ -7,63 +7,27 @@
 })(typeof globalThis === 'object' ? globalThis : this, function (loader) {
   'use strict';
 
-  const DAY_MS = 24 * 60 * 60 * 1000;
+  const SUCCESS_INTERVAL_MS = 6 * 60 * 60 * 1000;
   const DEFAULT_RETRY_DELAYS = Object.freeze([5 * 60 * 1000, 30 * 60 * 1000, 2 * 60 * 60 * 1000, 6 * 60 * 60 * 1000]);
-  const GAME_VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
-
   function fail(message, code) {
     const error = new Error(message);
     if (code) error.code = code;
     throw error;
   }
 
-  function normalizeIdentity(identity) {
-    if (!identity || typeof identity !== 'object' || Array.isArray(identity)
-      || Object.keys(identity).some((key) => !['gameVersion', 'gameReleaseId', 'snapshotId'].includes(key))) {
-      fail('trusted local identity is invalid', 'INVALID_IDENTITY');
-    }
-    if (typeof identity.gameVersion !== 'string' || !GAME_VERSION.test(identity.gameVersion)
-      || typeof identity.gameReleaseId !== 'string' || !/^[a-z0-9][a-z0-9._:-]{1,127}$/.test(identity.gameReleaseId)
-      || (identity.snapshotId !== undefined
-        && (typeof identity.snapshotId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/.test(identity.snapshotId)))) {
-      fail('trusted local identity is invalid', 'INVALID_IDENTITY');
-    }
-    return Object.freeze({
-      gameVersion: identity.gameVersion,
-      gameReleaseId: identity.gameReleaseId,
-      ...(identity.snapshotId === undefined ? {} : { snapshotId: identity.snapshotId })
-    });
-  }
-
-  function releaseIdentity(identity) {
-    return { gameVersion: identity.gameVersion, gameReleaseId: identity.gameReleaseId };
-  }
-
-  function scopeKey(identity) {
-    return JSON.stringify([identity.gameVersion, identity.gameReleaseId]);
-  }
-
-  function isVerifiedSnapshot(value) {
-    return !!value && value.snapshot && value.snapshot.version && value.snapshot.release;
-  }
+  function isVerifiedSnapshot(value) { return !!value && value.snapshot && value.snapshot.identity; }
 
   function createUpdateCoordinator({ store, fetchImpl = globalThis.fetch, cryptoApi = globalThis.crypto,
-    clock = () => Date.now(), baselineRawProvider = async () => null, loaderApi = loader,
-    successIntervalMs = DAY_MS, retryDelaysMs = DEFAULT_RETRY_DELAYS } = {}) {
+    clock = () => Date.now(), loaderApi = loader,
+    successIntervalMs = SUCCESS_INTERVAL_MS, retryDelaysMs = DEFAULT_RETRY_DELAYS } = {}) {
     if (!store || typeof store.readSnapshot !== 'function' || typeof store.beginCheck !== 'function'
       || typeof store.commitSnapshot !== 'function' || typeof store.getUpdateState !== 'function'
       || typeof store.recordCheckSuccess !== 'function' || typeof store.recordCheckFailure !== 'function') {
       fail('W10 snapshot store schedule API is required', 'DEPENDENCY_UNAVAILABLE');
     }
-    if (!loaderApi || typeof loaderApi.fetchVersionIndex !== 'function'
-      || typeof loaderApi.downloadSnapshotFromVersion !== 'function'
-      || typeof loaderApi.verifyStoredSnapshot !== 'function'
-      || typeof loaderApi.sameReleasePointer !== 'function'
-      || typeof loaderApi.snapshotSupportsPage !== 'function') {
-      fail('W10 shared loader version API is required', 'DEPENDENCY_UNAVAILABLE');
-    }
-    if (typeof fetchImpl !== 'function' || typeof clock !== 'function' || typeof baselineRawProvider !== 'function') {
-      fail('W10 update coordinator dependencies are invalid', 'INVALID_DEPENDENCY');
+    if (!loaderApi || typeof loaderApi.fetchCurrent !== 'function' || typeof loaderApi.downloadSnapshot !== 'function'
+      || typeof loaderApi.sameIdentity !== 'function' || typeof fetchImpl !== 'function' || typeof clock !== 'function') {
+      fail('source-data dependencies are unavailable', 'INVALID_DEPENDENCY');
     }
     if (!Number.isFinite(successIntervalMs) || successIntervalMs < 1
       || !Array.isArray(retryDelaysMs) || retryDelaysMs.length === 0
@@ -73,75 +37,48 @@
 
     const inFlight = new Map();
 
-    async function readCache(identity, page) {
+    async function readCache() {
       try {
-        const cached = await store.readSnapshot(identity);
-        return isVerifiedSnapshot(cached) && loaderApi.snapshotSupportsPage(cached.snapshot, page) ? cached : null;
+        const cached = await store.readSnapshot();
+        return isVerifiedSnapshot(cached) ? cached : null;
       } catch (_) {
         return null;
       }
     }
 
-    async function loadBaseline(identity, page) {
-      try {
-        const raw = await baselineRawProvider(identity);
-        if (!raw) return null;
-        const snapshot = await loaderApi.verifyStoredSnapshot({
-          versionBytes: raw.versionBytes,
-          manifestBytes: raw.manifestBytes,
-          files: raw.files,
-          identity,
-          page,
-          cryptoApi
-        });
-        return { source: 'baseline', snapshot };
-      } catch (_) {
-        return null;
-      }
-    }
-
-    async function resolveResult(identity, page, updateStatus, error) {
-      const cached = await readCache(identity, page);
+    async function resolveResult(updateStatus, error) {
+      const cached = await readCache();
       if (cached) {
         return Object.freeze({
           status: 'ready',
           source: cached.source,
           snapshot: cached.snapshot,
-          identity,
+          identity: cached.snapshot.identity,
           updateStatus,
           error: error || null
         });
       }
-      const baseline = await loadBaseline(identity, page);
-      if (baseline) {
-        return Object.freeze({
-          status: 'ready', source: 'baseline', snapshot: baseline.snapshot, identity,
-          updateStatus, error: error || null
-        });
-      }
-      return Object.freeze({ status: 'original', source: 'original', snapshot: null, identity,
+      return Object.freeze({ status: 'original', source: 'original', snapshot: null, identity: null,
         updateStatus, error: error || null });
     }
 
-    async function runCheck(identity, page, schedule, now) {
-      const localIdentity = releaseIdentity(identity);
-      const checkToken = await store.beginCheck(localIdentity, { attemptAt: now });
+    async function runCheck(schedule, now) {
+      const checkToken = await store.beginCheck({ attemptAt: now });
       try {
-        const index = await loaderApi.fetchVersionIndex({ fetchImpl, identity: localIdentity, cryptoApi });
-        const before = await store.readSnapshot(localIdentity).catch(() => null);
-        if (isVerifiedSnapshot(before) && loaderApi.sameReleasePointer(before.snapshot.release, index.release)
-          && loaderApi.snapshotSupportsPage(before.snapshot, page)) {
+        const index = await loaderApi.fetchCurrent({ fetchImpl });
+        const before = await store.readSnapshot().catch(() => null);
+        if (isVerifiedSnapshot(before) && before.source === 'active' && loaderApi.sameIdentity(before.snapshot.identity, index.current)) {
           const recorded = await store.recordCheckSuccess({
-            checkToken, identity: localIdentity, successAt: clock()
+            checkToken, successAt: clock()
           });
           return { status: recorded ? 'unchanged' : 'stale' };
         }
-        const downloaded = await loaderApi.downloadSnapshotFromVersion({
-          fetchImpl, identity: localIdentity, versionBytes: index.versionBytes, page, cryptoApi
+        const downloaded = await loaderApi.downloadSnapshot({
+          fetchImpl, currentBytes: index.currentBytes, cryptoApi
         });
         const completedAt = clock();
         const activated = await store.commitSnapshot({
-          checkToken, identity: localIdentity, snapshot: downloaded, completedAt
+          checkToken, snapshot: downloaded, completedAt
         });
         if (!activated || activated.source !== 'active') fail('verified W10 package was not atomically activated', 'ACTIVATION_FAILED');
         return { status: 'updated' };
@@ -150,7 +87,6 @@
         try {
           await store.recordCheckFailure({
             checkToken,
-            identity: localIdentity,
             failedAt: clock(),
             nextRetryAt: clock() + retryDelaysMs[nextFailure]
           });
@@ -161,31 +97,29 @@
       }
     }
 
-    async function runScheduledCheck(identity, page, isManual) {
+    async function runScheduledCheck(isManual) {
       const now = clock();
       let schedule;
-      try { schedule = await store.getUpdateState(releaseIdentity(identity)); }
+      try { schedule = await store.getUpdateState(); }
       catch (error) { return { status: 'storage-unavailable', error }; }
       const initialOrOldSuccess = schedule.lastFailureAt === null
         && (schedule.lastSuccessAt === null || now - schedule.lastSuccessAt >= successIntervalMs);
       const retryDue = schedule.failureCount > 0 && (schedule.nextRetryAt === null || now >= schedule.nextRetryAt);
-      const scopeMissing = !(await readCache(identity, page));
-      if (!isManual() && !initialOrOldSuccess && !retryDue && !scopeMissing) return { status: 'not-due' };
-      try { return await runCheck(identity, page, schedule, now); }
+      if (!isManual() && !initialOrOldSuccess && !retryDue) return { status: 'not-due' };
+      try { return await runCheck(schedule, now); }
       catch (error) { return { status: 'storage-unavailable', error }; }
     }
 
-    async function getSnapshot(trustedIdentity, { active = true, manual = false, page } = {}) {
-      const identity = normalizeIdentity(trustedIdentity);
+    async function getSnapshot({ active = true, manual = false } = {}) {
       if (active !== true && active !== false) fail('activity state must be boolean', 'INVALID_REQUEST');
       if (manual !== true && manual !== false) fail('manual state must be boolean', 'INVALID_REQUEST');
-      if (!active) return resolveResult(identity, page, 'inactive', null);
+      if (!active) return resolveResult('inactive', null);
 
-      const key = scopeKey(identity) + '\u0000' + String(page?.pathname || '');
+      const key = 'source-data';
       let entry = inFlight.get(key);
       if (!entry) {
         entry = { manual: manual === true, promise: null };
-        entry.promise = runScheduledCheck(identity, page, () => entry.manual);
+        entry.promise = runScheduledCheck(() => entry.manual);
         inFlight.set(key, entry);
         entry.promise.finally(() => {
           if (inFlight.get(key) === entry) inFlight.delete(key);
@@ -197,7 +131,7 @@
       let update;
       try { update = await entry.promise; }
       catch (error) { update = { status: 'failed', error }; }
-      return resolveResult(identity, page, update.status, update.error || null);
+      return resolveResult(update.status, update.error || null);
     }
 
     function inFlightCount() { return inFlight.size; }
@@ -205,5 +139,5 @@
     return Object.freeze({ getSnapshot, inFlightCount });
   }
 
-  return Object.freeze({ DAY_MS, DEFAULT_RETRY_DELAYS, createUpdateCoordinator });
+  return Object.freeze({ SUCCESS_INTERVAL_MS, DEFAULT_RETRY_DELAYS, createUpdateCoordinator });
 });

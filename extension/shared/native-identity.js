@@ -5,9 +5,6 @@
 })(typeof globalThis === 'object' ? globalThis : this, function () {
   'use strict';
 
-  const VERSION = /^\d+(?:\.\d+){1,3}$/;
-  const RELEASE_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{1,127}$/;
-  const SNAPSHOT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,159}$/;
   const SHA256 = /^[a-f0-9]{64}$/;
 
   function fail(message) {
@@ -24,19 +21,12 @@
   }
 
   function normalizeIdentity(value) {
-    if (!value || typeof value !== 'object' || Array.isArray(value)
-      || Object.keys(value).some((key) => !['gameVersion', 'gameReleaseId', 'snapshotId'].includes(key))
-      || typeof value.gameVersion !== 'string' || !VERSION.test(value.gameVersion)
-      || typeof value.gameReleaseId !== 'string' || !RELEASE_ID.test(value.gameReleaseId)
-      || (value.snapshotId !== undefined
-        && (typeof value.snapshotId !== 'string' || !SNAPSHOT_ID.test(value.snapshotId)))) {
-      fail('native proof identity must contain a complete supported game tuple');
-    }
-    return Object.freeze({
-      gameVersion: value.gameVersion,
-      gameReleaseId: value.gameReleaseId,
-      ...(value.snapshotId === undefined ? {} : { snapshotId: value.snapshotId })
-    });
+    const keys = ['schemaVersion', 'gameVersion', 'sourceCommit', 'textBatch'];
+    exactKeys(value, keys, 'native proof identity');
+    if (keys.some(key => typeof value[key] !== 'string')
+      || !/^1\.\d+\.\d+$/.test(value.schemaVersion) || !/^[0-9]+(\.[0-9]+){1,3}$/.test(value.gameVersion)
+      || !/^[a-f0-9]{40}$/i.test(value.sourceCommit) || !/^[A-Za-z0-9._-]{1,128}$/.test(value.textBatch)) fail('invalid native proof identity');
+    return Object.freeze({ ...value });
   }
 
   function asBytes(value) {
@@ -95,5 +85,13 @@
     return Object.freeze({ resolve });
   }
 
-  return Object.freeze({ createNativeIdentityResolver });
+  // Only a directly observed GamesLantern ID is a strong key; a route slug is not an ID.
+  // null lets the caller retain its exact native-text/route fallback.
+  function matchAlias(aliases, observation) {
+    if (!aliases?.ids?.length || typeof observation?.gameslanternId !== 'string'
+      || !observation.gameslanternId) return null;
+    return aliases.ids.includes(observation.gameslanternId);
+  }
+
+  return Object.freeze({ createNativeIdentityResolver, matchAlias });
 });
