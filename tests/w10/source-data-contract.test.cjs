@@ -110,3 +110,27 @@ test('UnitT15_驗證各分類沿用來源', () => {
     }
   }
 });
+
+// Scenario: effect provenance is optional and restricted by schema and category.
+test('UnitT16_驗證效果來源的版本分類及列舉', () => {
+  const { fixture11 } = require('../helpers/source-data-fixture-11.cjs');
+  const validate = data => { const { current, ...documents } = data; return contract.validateSnapshot({ current, documents }); };
+  for (const version of ['1.1.0', '1.2.0']) for (const category of ['skills', 'blessings']) for (const origin of ['official', 'unofficial-translation']) {
+    const data = fixture11(); for (const doc of Object.values(data)) doc.schemaVersion = version;
+    data[category].items[0].explanation.effectOrigin = origin;
+    assert.equal(validate(data).documents[category].items[0].explanation.effectOrigin, origin);
+  }
+  for (const make of [fixture, fixture11]) assert.doesNotThrow(() => validate(make()));
+  for (const category of ['skills', 'blessings']) for (const origin of ['other', '', null, 1, true, {}]) {
+    const data = fixture11(); data[category].items[0].explanation.effectOrigin = origin;
+    assert.throws(() => validate(data), { code: 'SOURCE_DATA_INVALID' });
+  }
+  for (const category of ['weapons', 'terms']) {
+    const data = fixture11(); data[category].items[0].explanation.effectOrigin = 'official';
+    assert.throws(() => validate(data), { code: 'SOURCE_DATA_INVALID' });
+  }
+  for (const category of ['skills', 'blessings', 'weapons', 'terms']) {
+    const data = fixture(); data[category].items[0].explanation.effectOrigin = 'official';
+    assert.throws(() => validate(data), { code: 'SOURCE_DATA_INVALID' });
+  }
+});

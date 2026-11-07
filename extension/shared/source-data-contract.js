@@ -148,8 +148,11 @@
     if (v.name.origin === 'glossary') check(Object.hasOwn(v.source, 'glossary'), 'glossary source');
     if (v.name.origin === 'official') string(v.name.en);
     if (v.name.origin === 'internal') { string(v.name.en, null, 1); check(v.name.zh === null, 'internal zh'); }
-    object(v.explanation, ['effect', 'conditions', 'calculation', 'notes', 'extra']);
-    Object.entries(v.explanation).forEach(([k, x]) => string(x, null, k === 'effect' ? 1 : 0));
+    const sections = ['effect', 'conditions', 'calculation', 'notes', 'extra'];
+    const modern = schemaVersion !== '1.0.0' && Number(schemaVersion.split('.')[1]) >= 1;
+    object(v.explanation, sections, modern && ['blessings', 'skills'].includes(category) ? ['effectOrigin'] : []);
+    sections.forEach(k => string(v.explanation[k], null, k === 'effect' ? 1 : 0));
+    if (Object.hasOwn(v.explanation, 'effectOrigin')) enumeration(v.explanation.effectOrigin, ['official', 'unofficial-translation']);
     array(v.errata, e => { object(e, ['locale', 'official', 'corrected', 'valueRef'], ['anchor']); enumeration(e.locale, ['en', 'zh']); string(e.official); string(e.corrected); string(e.valueRef, /^(\/([^~\/]|~[01])*)+$/);
       if (Object.hasOwn(e, 'anchor')) { const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence']); enumeration(a.field, ['official', 'name']); enumeration(a.locale, ['en', 'zh']); check(a.locale === e.locale, 'anchor locale'); string(a.text, null, 1); integer(a.occurrence, 1); }
     });
