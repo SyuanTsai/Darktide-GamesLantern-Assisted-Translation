@@ -10,8 +10,9 @@ test('InterT10_MV3新格式訊息與client複驗', async t => {
   try {
     context=await runtime.playwright.chromium.launchPersistentContext(profile,{executablePath:runtime.executablePath,headless:true,
       args:['--disable-extensions-except='+built.extensionPath,'--load-extension='+built.extensionPath]});
-    await context.route('**/*',route=>route.abort());
     let worker=context.serviceWorkers()[0]; if(!worker) worker=await context.waitForEvent('serviceworker');
+    const extensionBase=worker.url().replace('/shared/service-worker.js','/');
+    await context.route('**/*',route=>route.request().url().startsWith(extensionBase)?route.continue():route.abort());
     // Seed via the real store so the original boot coordinator can serve inactive without fetching.
     await worker.evaluate(async data=>{
       const raw=new TextEncoder();const store=W10SharedSnapshotStore.createSnapshotStore();
