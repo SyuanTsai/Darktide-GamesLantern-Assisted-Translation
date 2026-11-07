@@ -102,3 +102,11 @@ test('UnitT16_效果來源不顯示於詳細說明', () => {
   for (const model of build(after)) assert.ok(model.detailSections.every(section => section.sectionId !== 'effectOrigin'));
  }
 });
+
+// Scenario: a weapon gains raw profiles. Purpose: keep all presentation projections unchanged.
+test('UnitT17_原始傷害資料不進入顯示模型',()=>{
+ const {fixture11}=require('../helpers/source-data-fixture-11.cjs'); const examples=require('../fixtures/damage-profiles-examples.json');
+ const data=fixture11(), before=structuredClone(data); data.weapons.items[0].values.damageProfiles=structuredClone(examples[1].values.damageProfiles);
+ const validate=d=>{const {current,...documents}=d; return require('../../extension/shared/source-data-contract.js').validateSnapshot({current,documents});};
+ for(const build of [p.buildSkillViewModels,p.buildBlessingViewModels,p.buildWeaponFamilyViewModels]) assert.deepEqual(build(validate(structuredClone(data))),build(validate(structuredClone(before))));
+});

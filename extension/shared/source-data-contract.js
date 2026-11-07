@@ -94,7 +94,7 @@
       enumeration(v.nodeType, ['ability', 'ability_modifier', 'aura', 'keystone', 'keystone_modifier', 'tactical', 'tactical_modifier', 'stat', 'start', 'default', 'broker_stimm']);
       array(v.parents, x => string(x, ref('skill')), { unique: true });
     } else if (category === 'weapons') {
-      object(v, ['family', 'mark', 'weaponType', 'archetypes', 'actions', 'bars', 'blessings', 'params', ...(modern ? ['curves', 'attackCombos'] : [])]);
+      object(v, ['family', 'mark', 'weaponType', 'archetypes', 'actions', 'bars', 'blessings', 'params', ...(modern ? ['curves', 'attackCombos'] : [])], modern ? ['damageProfiles'] : []);
       string(v.family, null, 1); string(v.mark, null, 1); string(v.weaponType, ref('term'));
       array(v.archetypes, x => string(x), { unique: true }); array(v.blessings, x => string(x, ref('blessing')), { unique: true });
       array(v.actions, a => { object(a, ['slot', 'id', 'type', 'name']); ['slot', 'id', 'type'].forEach(k => string(a[k])); bilingual(a.name); });
@@ -104,6 +104,34 @@
         const reasons = ['LERP_T_OUT_OF_RANGE','NONLINEAR_COMBINATION','NONLINEAR_LERP','CONDITIONAL_CHAIN','CHAIN_TARGET_NOT_FOUND','CHAIN_START_AMBIGUOUS','CHAIN_CYCLE_WITHOUT_ATTACK','DYNAMIC_VALUE','REFERENCE_NOT_FOUND','DAMAGE_PROFILE_BINDING_NOT_FOUND'];
         const location = x => { object(x, ['path', 'line']); string(x.path, null, 1); integer(x.line, 1); };
         const number = x => check(typeof x === 'number' && Number.isFinite(x), 'number');
+        const unknownReasons = ['NOT_VERIFIED', 'SOURCE_UNAVAILABLE', 'CONFLICTING_EVIDENCE', 'NOT_EXPOSED_BY_SOURCE', 'DYNAMIC_VALUE'];
+        if (Object.hasOwn(v, 'damageProfiles')) {
+          const rawPower = p => {
+            object(p, ['kind', 'min', 'max', 'unknown', 'source']);
+            enumeration(p.kind, ['fixed', 'lerp', 'unknown']); location(p.source);
+            if (p.kind === 'unknown') { check(p.min === null && p.max === null, 'unknown power'); enumeration(p.unknown, unknownReasons); }
+            else { number(p.min); number(p.max); check(p.unknown === null, 'known power'); }
+          };
+          array(v.damageProfiles, p => {
+            object(p, ['id', 'distributions', 'bindings', 'unknown', 'source']); string(p.id, null, 1);
+            enumeration(p.unknown, [null, ...unknownReasons]); location(p.source);
+            array(p.distributions, d => {
+              object(d, ['target', 'range', 'attack', 'impact']);
+              if (d.target !== null && d.target !== 'default') integer(d.target, 1);
+              enumeration(d.range, [null, 'near', 'far']); rawPower(d.attack); rawPower(d.impact);
+            });
+            array(p.bindings, b => {
+              object(b, ['action', 'kind', 'template', 'source'], ['powerLevel']); string(b.action, null, 1);
+              enumeration(b.kind, ['action', 'hitScan', 'projectile', 'shotshell', 'flamerGas', 'explosion']); nullable(b.template); location(b.source);
+              if (b.kind === 'hitScan' || b.kind === 'projectile') {
+                string(b.template, null, 1); object(b.powerLevel, ['value', 'unknown', 'source']); location(b.powerLevel.source);
+                if (b.powerLevel.value === null) enumeration(b.powerLevel.unknown, unknownReasons);
+                else { number(b.powerLevel.value); check(b.powerLevel.unknown === null, 'known power level'); }
+              } else check(!Object.hasOwn(b, 'powerLevel'), 'power level forbidden');
+            });
+          });
+          check(new Set(v.damageProfiles.map(p => p.id)).size === v.damageProfiles.length, 'damage profile ids');
+        }
         array(v.curves, c => {
           object(c, ['id','bar','stat','name','input','interpolation','knots','outputUnit','unknown','source']);
           ['id','bar','stat'].forEach(k => string(c[k])); bilingual(c.name);

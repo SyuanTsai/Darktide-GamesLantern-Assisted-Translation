@@ -7,6 +7,9 @@ test('InterT10_真實DOM顯示新格式與還原',async t=>{
  const browser=await runtime.playwright.chromium.launch({executablePath:runtime.executablePath,headless:true});
  try{
   const context=await browser.newContext();const data=displayFixture();
+  for(const doc of Object.values(data))doc.schemaVersion='1.1.0';
+  data.weapons.items=require('../helpers/source-data-fixture-11.cjs').fixture11().weapons.items;
+  data.weapons.items[0].values.damageProfiles=structuredClone(require('../fixtures/damage-profiles-examples.json')[1].values.damageProfiles);
   await context.route('**/*',route=>route.request().resourceType()==='document'?route.fulfill({contentType:'text/html',body:detailHtml(data)}):route.abort());
   const page=await context.newPage();await page.goto('https://darktide.gameslantern.com/abilities/example');
   // No extension runtime is present, so content-entry exports without auto-start.
@@ -19,7 +22,7 @@ test('InterT10_真實DOM顯示新格式與還原',async t=>{
    await controller.start();const translated=document.querySelector('.text-lg').textContent,details=document.querySelector('[data-w11-owned="details"]').textContent;
    await controller.setEnabled(false);const restored=document.querySelector('.text-lg').textContent;controller.dispose();return {translated,details,restored};
   },data);
-  assert.equal(result.translated,'範例');assert.equal(result.restored,'Example');assert.match(result.details,/勘誤/);assert.doesNotMatch(result.details,/old → new/);
+  assert.equal(result.translated,'範例');assert.equal(result.restored,'Example');assert.match(result.details,/勘誤/);assert.doesNotMatch(result.details,/old → new|default_autogun_assault|700/);
  }finally{await browser.close();}
 });
 
