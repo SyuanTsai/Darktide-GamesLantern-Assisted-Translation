@@ -88,3 +88,17 @@ test('UnitT15_沿用來源不影響顯示與比對',()=>{
  const a=snapshot(original), b=snapshot(changed);
  for(const build of [p.buildSkillViewModels,p.buildBlessingViewModels,p.buildWeaponFamilyViewModels]) assert.deepEqual(build(b),build(a));
 });
+
+// Scenario: valid provenance must not become a detail section or change presentation.
+test('UnitT16_效果來源不顯示於詳細說明', () => {
+ const { fixture11 } = require('../helpers/source-data-fixture-11.cjs');
+ const data = fixture11();
+ const validate = d => { const { current, ...documents } = d; return require('../../extension/shared/source-data-contract.js').validateSnapshot({ current, documents }); };
+ const before = validate(structuredClone(data));
+ for (const category of ['skills', 'blessings']) data[category].items[0].explanation.effectOrigin = 'unofficial-translation';
+ const after = validate(data);
+ for (const build of [p.buildSkillViewModels, p.buildBlessingViewModels]) {
+  assert.deepEqual(build(after), build(before));
+  for (const model of build(after)) assert.ok(model.detailSections.every(section => section.sectionId !== 'effectOrigin'));
+ }
+});
