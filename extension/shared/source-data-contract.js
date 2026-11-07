@@ -137,7 +137,11 @@
     params(v.params);
   }
   function item(v, category, schemaVersion) {
-    object(v, ['id', 'key', 'name', 'official', 'values', 'explanation', 'errata', 'source'], ['aliases']);
+    object(v, ['id', 'key', 'name', 'official', 'values', 'explanation', 'errata', 'source'], ['aliases', 'retainedFrom']);
+    if (Object.hasOwn(v, 'retainedFrom')) {
+      const r = v.retainedFrom; object(r, ['gameVersion', 'sourceCommit', 'textBatch']);
+      string(r.gameVersion, VERSION); string(r.sourceCommit, COMMIT); string(r.textBatch, BATCH);
+    }
     string(v.id, ref({ skills: 'skill', weapons: 'weapon', blessings: 'blessing', terms: 'term' }[category])); string(v.key, null, 1);
     object(v.name, ['en', 'zh', 'origin']); nullable(v.name.en); nullable(v.name.zh); enumeration(v.name.origin, ['official', 'glossary', 'internal']);
     bilingual(v.official); source(v.source);

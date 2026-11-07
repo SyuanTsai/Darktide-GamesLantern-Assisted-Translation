@@ -90,3 +90,23 @@ test('UnitT40_保存null與合法巢狀欄位並深凍結', () => {
   const snapshot = contract.validateSnapshot({ current, documents });
   assert.equal(snapshot.documents.skills.items[0].name.zh, null); assert.ok(Object.isFrozen(item.values.params));
 });
+
+// Scenario: every category in supported schema versions carries previous-version provenance. Purpose: accept valid metadata and reject malformed whole snapshots.
+test('UnitT15_驗證各分類沿用來源', () => {
+  for (const version of ['1.0.0', '1.1.0', '1.2.0']) {
+    for (const category of ['skills', 'weapons', 'blessings', 'terms']) {
+      const make = () => {
+        const data = version === '1.0.0' ? fixture() : Object.fromEntries(['current', 'skills', 'weapons', 'blessings', 'terms'].map(name => [name, require('node:fs').readFileSync(require('node:path').join(__dirname, '../fixtures/source-data-v1-1', name + '.json'), 'utf8')]).map(([name, json]) => [name, JSON.parse(json)]));
+        for (const doc of Object.values(data)) doc.schemaVersion = version;
+        data[category].items[0].retainedFrom = { gameVersion: '9.8.7', sourceCommit: 'a'.repeat(40), textBatch: 'previous-batch' };
+        return data;
+      };
+      const validate = data => { const { current, ...documents } = data; return contract.validateSnapshot({ current, documents }); };
+      assert.doesNotThrow(() => validate(make()));
+      for (const mutate of [x => delete x.sourceCommit, x => x.extra = true, x => x.gameVersion = '1', x => x.sourceCommit = 'bad', x => x.textBatch = 'bad/batch']) {
+        const data = make(); mutate(data[category].items[0].retainedFrom);
+        assert.throws(() => validate(data), { code: 'SOURCE_DATA_INVALID' });
+      }
+    }
+  }
+});

@@ -80,3 +80,11 @@ test('UnitT50_null與placeholder及markup不覆寫',()=>{
  assert.equal(p.buildSkillViewModels(snapshot(d))[0].translatedName,'範例（非官方譯名）');
  const complete=structuredClone(d);complete.skills.items[0].explanation.calculation='計算內容';assert.deepEqual(p.buildSkillViewModels(snapshot(complete))[0].detailSections.map(x=>x.heading),['效果','條件','計算','補充','額外']);
 });
+
+// Scenario: all category items carry valid previous-version metadata. Purpose: preserve projections and matching inputs without exposing provenance.
+test('UnitT15_沿用來源不影響顯示與比對',()=>{
+ const original=displayFixture(), changed=structuredClone(original);
+ for(const category of ['skills','weapons','blessings','terms']) for(const item of changed[category].items) item.retainedFrom={gameVersion:'9.8',sourceCommit:'a'.repeat(40),textBatch:'previous'};
+ const a=snapshot(original), b=snapshot(changed);
+ for(const build of [p.buildSkillViewModels,p.buildBlessingViewModels,p.buildWeaponFamilyViewModels]) assert.deepEqual(build(b),build(a));
+});

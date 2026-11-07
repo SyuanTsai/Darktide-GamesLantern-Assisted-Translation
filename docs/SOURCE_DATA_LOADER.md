@@ -2,7 +2,7 @@
 
 W10 固定讀取 `https://darktide.tw-syuan.com/source-data/current.json`，再依已驗證的 `gameVersion` 組成 `/source-data/<gameVersion>/{skills,weapons,blessings,terms}.json`。版本支援兩到四段數字；不接受資料指定任意下載 URL。dev 建置固定使用 preview origin。
 
-契約依 DarkTide-Source-Data `1396e47` 的六份 schema 手寫驗證，包含必填、額外欄位、條件規則及巢狀 values。另檢查四欄識別（schemaVersion、gameVersion、sourceCommit、textBatch）、分類、current.path／versions、唯一 id 與分類前綴；拒絕可執行內容、危險鍵、BOM 與無效 UTF-8。任一檔案不符即拒絕整組。null 文字原樣保留，沒有 approval／review 條件。
+契約依 DarkTide-Source-Data main `0d56c90`（WP2b 合併後） 的六份 schema 手寫驗證，包含必填、額外欄位、條件規則及巢狀 values。另檢查四欄識別（schemaVersion、gameVersion、sourceCommit、textBatch）、分類、current.path／versions、唯一 id 與分類前綴；拒絕可執行內容、危險鍵、BOM 與無效 UTF-8。任一檔案不符即拒絕整組。選填的 `retainedFrom` 經驗證後接受，但不顯示，也不影響比對或覆寫。null 文字原樣保留，沒有 approval／review 條件。
 
 所有 fetch 使用 `cache: 'no-cache'`、CORS、省略 credentials、拒絕 redirect，檢查最終 URL 及 JSON MIME。current 上限 64 KiB、單檔 32 MiB、整組 64 MiB；每次 fetchCurrent／downloadSnapshot 操作逾時 30 秒。
 
@@ -38,4 +38,4 @@ worker 先以受保護訊息傳送 identity、整組 digest、currentBytes 與�
 
 接受 major 為 1 的三段版本，current 與四檔版本及其餘 identity 必須一致；其他 major 拒絕並保留原文。1.0.0 不允許曲線、連段及 curveId；1.1.0 起要求這些欄位並驗證參照。其他 1.x 版本號可接受，但不認得的欄位仍嚴格拒絕，不能保證未來 schema 相容。
 
-1.1.0 曲線及連段驗證依 WP2b `8391c32` 的 schema 與範例：曲線包含 `stat`、`name`、`input`、`outputUnit` 和 `source`，而曲線 ID 不要求特定字串組成。每個 stat 的 curveId 與曲線一對一對應且 bar 相符。WP2b 合併後需再次核對。
+1.1.0 曲線及連段驗證依 Source-Data main `0d56c90` 的 schema 與範例：曲線包含 `stat`、`name`、`input`、`outputUnit` 和 `source`，而曲線 ID 不要求特定字串組成。每個 stat 的 curveId 與曲線一對一對應且 bar 相符。
