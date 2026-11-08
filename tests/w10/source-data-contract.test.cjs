@@ -7,12 +7,12 @@ const contract = require('../../extension/shared/source-data-contract.js');
 test('UnitT05_驗證勘誤定位欄位', () => {
   for (const anchor of [undefined, { field: 'official', locale: 'zh', text: '文字', occurrence: 1 }]) {
     const { current, ...documents } = fixture();
-    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', ...(anchor ? { anchor } : {}) }];
+    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRefs: ['/x'], sources: [{ path: 'source.lua', line: 1 }], ...(anchor ? { anchor } : {}) }];
     assert.doesNotThrow(() => contract.validateSnapshot({ current, documents }));
   }
   for (const change of [{extra: 1}, {field: 'bad'}, {locale: 'ja'}, {locale: 'en'}, {text: ''}, {occurrence: 0}, {occurrence: 1.5}, {text: '<script>'}]) {
     const { current, ...documents } = fixture();
-    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRef: '/x', anchor: { field: 'official', locale: 'zh', text: '文字', occurrence: 1, ...change } }];
+    documents.skills.items[0].errata = [{ locale: 'zh', official: '文字', corrected: '修正', valueRefs: ['/x'], sources: [{ path: 'source.lua', line: 1 }], anchor: { field: 'official', locale: 'zh', text: '文字', occurrence: 1, ...change } }];
     assert.throws(() => contract.validateSnapshot({ current, documents }), { code: 'SOURCE_DATA_INVALID' });
   }
 });
@@ -48,8 +48,8 @@ test('UnitT30_拒絕schema與安全規則違規', () => {
     x => x.skills.items[0].aliases = { gameslantern: { ids: [] } },
     x => x.skills.items[0].aliases = { gameslantern: { ids: ['a','a'] } },
     x => x.skills.items[0].aliases = { gameslantern: { ids: ['a'], extra: 1 } },
-    x => x.skills.items[0].errata = [{ locale: 'ja', official: '', corrected: '', valueRef: '/x' }],
-    x => x.skills.items[0].errata = [{ locale: 'en', official: '', corrected: '', valueRef: '/x~2' }],
+    x => x.skills.items[0].errata = [{ locale: 'ja', official: '', corrected: '', valueRefs: ['/x'], sources: [{ path: 'source.lua', line: 1 }] }],
+    x => x.skills.items[0].errata = [{ locale: 'en', official: '', corrected: '', valueRefs: ['/x~2'], sources: [{ path: 'source.lua', line: 1 }] }],
     x => delete x.skills.items[0].explanation.notes, x => x.skills.items[0].explanation.effect = '',
     x => x.skills.items[0].source.files = [], x => x.skills.items[0].source.files[0].line = 0,
     x => x.skills.items[0].source.files[0].extra = 1, x => x.skills.items[0].source.scriptVersion = 'script',
@@ -86,7 +86,7 @@ test('UnitT40_保存null與合法巢狀欄位並深凍結', () => {
   item.name.origin = 'internal'; item.name.en = 'internal'; item.name.zh = null; item.official = { en: null, zh: null };
   item.aliases = { gameslantern: { ids: [''], path: '' } };
   item.values.params = { unknown: { value: null, unknown: 'DYNAMIC_VALUE', unit: 'percent' }, list: { value: [1, 'x', false, null] } };
-  item.errata = [{ locale: 'zh', official: '', corrected: '', valueRef: '/values/a~1b/~0' }];
+  item.errata = [{ locale: 'zh', official: '', corrected: '', valueRefs: ['/values/a~1b/~0'], sources: [{ path: 'source.lua', line: 1 }] }];
   const snapshot = contract.validateSnapshot({ current, documents });
   assert.equal(snapshot.documents.skills.items[0].name.zh, null); assert.ok(Object.isFrozen(item.values.params));
 });

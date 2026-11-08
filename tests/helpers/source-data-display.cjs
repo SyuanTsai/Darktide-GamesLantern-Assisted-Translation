@@ -7,8 +7,8 @@ function displayFixture() {
   skill.official = { en: 'Complete English description.\n\nSecond paragraph.', zh: '完整中文描述。\n\n第二段。' };
   skill.aliases = { gameslantern: { ids: ['example-id'], path: '/abilities/example' } };
   skill.explanation = { effect: '效果內容', conditions: '條件內容', calculation: '', notes: '補充內容', extra: '額外內容' };
-  skill.errata = [ {locale:'zh', official:'原說明', corrected:'修正說明', valueRef:'/values/params/bonus'},
-    {locale:'en', official:'old', corrected:'new', valueRef:'/values/params/bonus'} ];
+  skill.errata = [ {locale:'zh', official:'原說明', corrected:'修正說明', valueRefs:['/values/params/bonus'], sources: [{ path: 'source.lua', line: 1 }]},
+    {locale:'en', official:'old', corrected:'new', valueRefs:['/values/params/bonus'], sources: [{ path: 'source.lua', line: 1 }]} ];
   const other = structuredClone(skill); other.id += '_other'; other.key = 'other'; delete other.aliases;
   other.name = {en:'Other', zh:null, origin:'official'};
   other.official = {en:'Other English description.', zh:'提升 {bonus}。'};
@@ -24,7 +24,7 @@ function displayFixture() {
   const blessing = data.blessings.items[0];
   blessing.name = {en:'Example Blessing',zh:'範例祝福',origin:'official'};
   blessing.official = {en:'Blessing description.',zh:'祝福原文。'};
-  blessing.errata.push({locale:'zh',official:'原文',corrected:'修正',valueRef:'/values/params/bonus',anchor:{field:'official',locale:'zh',text:'原文',occurrence:1}});
+  blessing.errata.push({locale:'zh',official:'原文',corrected:'修正',valueRefs:['/values/params/bonus'], sources: [{ path: 'source.lua', line: 1 }],anchor:{field:'official',locale:'zh',text:'原文',occurrence:1}});
   blessing.values.weapons = [weapon.id,mark2.id];
   blessing.values.tiers = [1,2,3,4].map(tier=>({tier,params:{bonus:{value:tier,unit:'percent'},hidden:{value:null,unknown:'NOT_EXPOSED_BY_SOURCE'}}}));
   weapon.values.blessings = mark2.values.blessings = [blessing.id];
