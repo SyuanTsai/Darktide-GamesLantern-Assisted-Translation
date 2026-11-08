@@ -43,13 +43,13 @@ test('InterT30_相同識別只抓current不同識別啟用整組', async () => {
   const { store, db } = setup(); const data = fixture('1.14'); const server = await localSource(data); let now = 100;
   const coordinator = createUpdateCoordinator({ store, fetchImpl: server.fetchImpl, cryptoApi: webcrypto, clock: () => now });
   try {
-    assert.equal((await coordinator.getSnapshot()).updateStatus, 'updated'); assert.equal(server.requests.length, 5);
-    assert.equal((await coordinator.getSnapshot()).updateStatus, 'not-due'); assert.equal(server.requests.length, 5);
+    assert.equal((await coordinator.getSnapshot()).updateStatus, 'updated'); assert.equal(server.requests.length, 9);
+    assert.equal((await coordinator.getSnapshot()).updateStatus, 'not-due'); assert.equal(server.requests.length, 9);
     now += SUCCESS_INTERVAL_MS;
-    assert.equal((await coordinator.getSnapshot()).updateStatus, 'unchanged'); assert.equal(server.requests.length, 6);
+    assert.equal((await coordinator.getSnapshot()).updateStatus, 'unchanged'); assert.equal(server.requests.length, 10);
     Object.assign(data, fixture('1.15'));
     assert.equal((await coordinator.getSnapshot({ manual: true })).snapshot.identity.gameVersion, '1.15');
-    assert.equal(server.requests.length, 11); assert.equal(db().maps.get('snapshots').size, 2);
+    assert.equal(server.requests.length, 19); assert.equal(db().maps.get('snapshots').size, 2);
     assert.equal(SUCCESS_INTERVAL_MS, 6 * 60 * 60 * 1000);
   } finally { await server.close(); store.close(); }
 });
@@ -83,7 +83,7 @@ test('InterT60_合併inflight且inactive不抓取', async () => {
   try {
     assert.equal((await coordinator.getSnapshot({ active: false })).source, 'original'); assert.equal(server.requests.length, 0);
     const results = await Promise.all([coordinator.getSnapshot(), coordinator.getSnapshot({ manual: true }), coordinator.getSnapshot()]);
-    assert.ok(results.every(x => x.status === 'ready')); assert.equal(server.requests.length, 5); assert.equal(coordinator.inFlightCount(), 0);
+    assert.ok(results.every(x => x.status === 'ready')); assert.equal(server.requests.length, 9); assert.equal(coordinator.inFlightCount(), 0);
   } finally { await server.close(); store.close(); }
 });
 // Scenario: activation transaction aborts after staging. Purpose: active/previous pointers and bytes stay atomic.
@@ -119,11 +119,26 @@ test('InterT90_同版sourceCommit與textBatch改變會重新下載', async () =>
   const { store } = setup(); const data = fixture('1.14'); const server = await localSource(data);
   const coordinator = createUpdateCoordinator({ store, fetchImpl: server.fetchImpl, cryptoApi: webcrypto });
   try {
-    await coordinator.getSnapshot(); let expected = 5;
+    await coordinator.getSnapshot(); let expected = 9;
     for (const [field, value] of [['sourceCommit', 'a'.repeat(40)], ['textBatch', 'next-batch']]) {
       for (const document of Object.values(data)) document[field] = value;
-      const result = await coordinator.getSnapshot({ manual: true }); expected += 5;
+      const result = await coordinator.getSnapshot({ manual: true }); expected += 9;
       assert.equal(result.updateStatus, 'updated'); assert.equal(result.identity[field], value); assert.equal(server.requests.length, expected);
     }
+  } finally { await server.close(); store.close(); }
+});
+
+// Scenario: a new version fails on its second shard, then an unchanged active identity is checked. Purpose: retain active and avoid downloading parts again.
+test('InterT55_分片失敗保留active且相同識別只抓current', async () => {
+  const { transport } = require('../helpers/source-data-server.cjs'); const { store } = setup(); await commit(store, '1.14');
+  const data = fixture('1.15'); const t = transport(data, 'skills', true); delete t.routes['skills.part-0002.bin'];
+  const server = await localSource(data, { routes:t.routes });
+  const coordinator = createUpdateCoordinator({ store, fetchImpl:server.fetchImpl, cryptoApi:webcrypto });
+  try {
+    const failed = await coordinator.getSnapshot({ manual:true }); assert.equal(failed.source, 'active'); assert.equal(failed.identity.gameVersion, '1.14');
+    assert.ok(server.requests.some(x => x.url.endsWith('part-0002.bin')));
+    Object.assign(data, fixture('1.14')); server.requests.length = 0;
+    assert.equal((await coordinator.getSnapshot({ manual:true })).updateStatus, 'unchanged');
+    assert.equal(server.requests.length, 1); assert.ok(server.requests[0].url.endsWith('/current.json'));
   } finally { await server.close(); store.close(); }
 });

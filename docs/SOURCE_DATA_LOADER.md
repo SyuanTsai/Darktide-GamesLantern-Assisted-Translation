@@ -1,10 +1,12 @@
 # Source-Data 載入器
 
-W10 固定讀取 `https://darktide.tw-syuan.com/source-data/current.json`，再依已驗證的 `gameVersion` 組成 `/source-data/<gameVersion>/{skills,weapons,blessings,terms}.json`。版本支援兩到四段數字；不接受資料指定任意下載 URL。dev 建置固定使用 preview origin。
+W10 固定讀取 `https://darktide.tw-syuan.com/source-data/current.json`，再依已驗證的 `gameVersion` 逐類探測 `/source-data/<gameVersion>/<category>.manifest.json`。只有 manifest 真正回傳 404 才回退同目錄的 `<category>.json`；其他 HTTP 錯誤、redirect、MIME、格式、長度或雜湊錯誤均拒絕整組，不回退舊 URL。版本支援兩到四段數字；不接受資料指定任意下載 URL。dev 建置固定使用 preview origin。
 
 契約依 DarkTide-Source-Data main `0d56c90`（WP2b 合併後） 的六份 schema 手寫驗證，包含必填、額外欄位、條件規則及巢狀 values。另檢查四欄識別（schemaVersion、gameVersion、sourceCommit、textBatch）、分類、current.path／versions、唯一 id 與分類前綴；拒絕可執行內容、危險鍵、BOM 與無效 UTF-8。任一檔案不符即拒絕整組。選填的 `retainedFrom` 經驗證後接受，但不顯示，也不影響比對或覆寫。null 文字原樣保留，沒有 approval／review 條件。
 
-所有 fetch 使用 `cache: 'no-cache'`、CORS、省略 credentials、拒絕 redirect，檢查最終 URL 及 JSON MIME。current 上限 64 KiB、單檔 32 MiB、整組 64 MiB；每次 fetchCurrent／downloadSnapshot 操作逾時 30 秒。
+所有 fetch 使用 `cache: 'no-cache'`、CORS、省略 credentials、拒絕 redirect，檢查最終 URL；JSON 使用 `application/json`（charset 若指定須為 UTF-8），分片使用 `application/octet-stream`。manifest 嚴格驗證欄位、版本、分類、序號、連續 offset、大小及由分類和序號推導的同目錄檔名；不得提供任意路徑。`single` 下載一個 JSON；`raw-byte-shards` 依序下載固定 20 MiB 分片（最後一片可較小），驗證每片實際大小與 SHA-256，串接後驗證總大小與總 SHA-256，再以原始 bytes 交給既有驗證流程。manifest 的每片與總 hash 檢查傳輸自洽，並非外部來源的信任釘選。
+
+current 與每份 manifest 各上限 64 KiB，重組後每類上限 32 MiB（33,554,432 bytes），整組含 current 上限 64 MiB，分片最多 2 片；依實收 bytes 計算。每次 fetchCurrent／downloadSnapshot 操作逾時 30 秒，並支援取消。1.13.4 weapons 原始檔為 26,580,658 bytes，約佔單類上限的 79%；接近上限時須另案評估。
 
 快照存於新 IndexedDB `darktide-w10-source-data-snapshots-v1` 的單一 `source-data` scope，以 gameVersion＋sourceCommit＋textBatch＋本機 raw bytes SHA-256 作鍵。摘要採固定分類順序與長度框定，只用於偵測本機損毀，沒有遠端 SHA 釘選。讀取時重新驗證 bytes、identity、digest；staging 與 generation／CAS 保護整組原子啟用。舊資料庫不讀寫也不刪除。
 
