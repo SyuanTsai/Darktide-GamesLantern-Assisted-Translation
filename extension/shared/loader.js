@@ -57,7 +57,7 @@
     return url;
   }
 
-  function assertJsonResponse(response, expectedUrl, label) {
+  function assertJsonResponse(response, expectedUrl, label, binary = false) {
     if (!response || response.status !== 200 || response.ok !== true) {
       fail(label + ' HTTP status is not 200' + (response && Number.isInteger(response.status) ? ': ' + response.status : ''));
     }
@@ -74,7 +74,8 @@
     const contentType = response.headers.get('content-type');
     if (typeof contentType !== 'string') fail(label + ' MIME type is missing');
     const [mediaType, ...parameters] = contentType.split(';').map((part) => part.trim().toLowerCase());
-    if (mediaType !== 'application/json') fail(label + ' MIME type must be application/json');
+    if (mediaType !== (binary ? 'application/octet-stream' : 'application/json')) fail(label + ' MIME type is invalid');
+    if (binary) return;
     for (const parameter of parameters) {
       const match = /^charset\s*=\s*["']?([^"']+)["']?$/.exec(parameter);
       if (/^charset\s*=/i.test(parameter) && (!match || !['utf-8', 'utf8'].includes(match[1]))) {
@@ -131,7 +132,7 @@
     return bytes + ' byte';
   }
 
-  async function fetchJsonBytes(fetchImpl, url, label, maxBytes, total, signal) {
+  async function fetchJsonBytes(fetchImpl, url, label, maxBytes, total, signal, options = {}) {
     if (typeof fetchImpl !== 'function') fail('fetchImpl must be a function');
     if (signal && signal.aborted) fail('snapshot request was aborted', 'ABORTED');
     let response;
@@ -148,8 +149,54 @@
       if (signal && signal.aborted) fail('snapshot request was aborted', 'ABORTED');
       fail(label + ' request failed: ' + error.message);
     }
-    assertJsonResponse(response, url, label);
+    if (options.allow404 && response && response.status === 404 && response.redirected === false && response.url === url.href) return null;
+    assertJsonResponse(response, url, label, options.binary);
     return readBounded(response, label, maxBytes, total, signal);
+  }
+
+  const PART_BYTES = 20 * 1024 * 1024;
+  const MAX_PARTS = Math.ceil(LIMITS.fileBytes / PART_BYTES);
+  function validateManifest(m, version, category) {
+    const keys = (value, expected) => value && typeof value === 'object' && !Array.isArray(value)
+      && Object.keys(value).sort().join(',') === expected.split(',').sort().join(',');
+    const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+    const integer = value => Number.isSafeInteger(value) && value >= 0;
+    if (!keys(m, 'transportSchemaVersion,representation,gameVersion,category,totalBytes,totalSha256,parts')
+      || m.transportSchemaVersion !== '1.0.0' || m.gameVersion !== version || m.category !== category
+      || !['single', 'raw-byte-shards'].includes(m.representation) || !integer(m.totalBytes)
+      || m.totalBytes > LIMITS.fileBytes || !hash(m.totalSha256) || !Array.isArray(m.parts)
+      || m.parts.length < 1 || m.parts.length > MAX_PARTS
+      || (m.representation === 'single' && (m.parts.length !== 1 || m.totalBytes > PART_BYTES))
+      || (m.representation === 'raw-byte-shards' && m.totalBytes <= PART_BYTES)) fail(category + ' manifest is invalid');
+    let offset = 0;
+    for (let i = 0; i < m.parts.length; i++) {
+      const part = m.parts[i];
+      const expectedPath = m.representation === 'single' ? category + '.json'
+        : category + '.part-' + String(i + 1).padStart(4, '0') + '.bin';
+      if (!keys(part, 'index,path,offset,sizeBytes,sha256') || part.index !== i + 1
+        || part.path !== expectedPath || part.offset !== offset || !integer(part.sizeBytes) || !hash(part.sha256)
+        || (m.representation === 'raw-byte-shards' && (part.sizeBytes === 0 || part.sizeBytes > PART_BYTES
+          || (i < m.parts.length - 1 && part.sizeBytes !== PART_BYTES)))) fail(category + ' manifest part is invalid');
+      offset += part.sizeBytes;
+    }
+    if (offset !== m.totalBytes) fail(category + ' manifest total size is invalid');
+    return m;
+  }
+  async function downloadCategory(fetchImpl, current, category, total, signal, cryptoApi) {
+    const base = '/source-data/' + current.gameVersion + '/' + category;
+    const manifestBytes = await fetchJsonBytes(fetchImpl, fixedUrl(base + '.manifest.json'), category + ' manifest', LIMITS.currentBytes, null, signal, { allow404: true });
+    if (manifestBytes === null) return fetchJsonBytes(fetchImpl, fixedUrl(base + '.json'), category, LIMITS.fileBytes, total, signal);
+    const m = validateManifest(decodeJson(manifestBytes, category + ' manifest'), current.gameVersion, category);
+    if (total.value + m.totalBytes > total.limit) fail('snapshot exceeds the 64 MiB total byte limit');
+    const result = new Uint8Array(m.totalBytes);
+    for (const part of m.parts) {
+      const suffix = m.representation === 'single' ? '.json' : '.part-' + String(part.index).padStart(4, '0') + '.bin';
+      const bytes = await fetchJsonBytes(fetchImpl, fixedUrl(base + suffix), category + ' part', part.sizeBytes, total, signal, { binary: m.representation !== 'single' });
+      if (bytes.length !== part.sizeBytes || await sha256(bytes, cryptoApi) !== part.sha256) fail(category + ' part size or SHA-256 mismatch');
+      result.set(bytes, part.offset);
+    }
+    if (await sha256(result, cryptoApi) !== m.totalSha256) fail(category + ' total SHA-256 mismatch');
+    return result;
   }
 
   function withDeadline(externalSignal, operation) {
@@ -222,8 +269,7 @@
     return withDeadline(signal, async internalSignal => {
       const total = { value: copiedCurrent.length, limit: LIMITS.snapshotBytes }; const files = {};
       for (const k of CATEGORIES) {
-        const url = fixedUrl('/source-data/' + current.gameVersion + '/' + k + '.json');
-        files[k] = await fetchJsonBytes(fetchImpl, url, k, LIMITS.fileBytes, total, internalSignal);
+        files[k] = await downloadCategory(fetchImpl, current, k, total, internalSignal, cryptoApi);
       }
       return inspectRaw({ currentBytes: copiedCurrent, files, cryptoApi });
     });
