@@ -287,7 +287,7 @@ test('InterT12_RendersNativeOfficialZhTwAndPendingCompatibilityNotice',async t=>
       document.getElementById('snapshot-metadata').textContent.includes('0.0.3'));
     const notice=await page.locator('#data-status').textContent();
     assert.ok(notice.includes('待審資料'));
-    assert.ok(notice.includes('代碼快照與文字版本相容性尚未核實'));
+    assert.doesNotMatch(notice, /代碼快照與文字版本相容性尚未核實/);
     const official=page.locator('#content-cards .official-copy').first();
     assert.ok((await official.textContent()).includes('官方繁體中文原始字串'));
     assert.ok((await official.textContent()).includes('合成冷卻 {cooldown:%s} 秒。'));

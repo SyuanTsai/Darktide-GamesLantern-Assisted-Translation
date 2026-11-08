@@ -31,6 +31,7 @@
 
   function locateErratum(item, erratum) {
     const a = erratum?.anchor;
+    if (a?.field === 'displayParameter' || (a?.itemId && a.itemId !== item?.id)) return null;
     const text = a && item?.[a.field]?.[a.locale];
     if (typeof text !== 'string' || typeof a.text !== 'string' || !a.text || !Number.isInteger(a.occurrence) || a.occurrence < 1) return null;
     let start = -1, next = 0;

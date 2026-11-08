@@ -34,7 +34,7 @@ test('InterT20_內嵌勘誤重掃穩定且原站變更還原',async t=>{
   const data=displayFixture();
   for(const field of ['name','official']) {
    const text=field==='name'?'範例':'中文';
-   data.skills.items[0].errata=[{locale:'zh',official:text,corrected:'修正',valueRef:'/values/params/bonus',anchor:{field,locale:'zh',text,occurrence:1}}];
+   data.skills.items[0].errata=[{locale:'zh',official:text,corrected:'修正',valueRefs:['/values/params/bonus'], sources: [{ path: 'source.lua', line: 1 }],anchor:{field,locale:'zh',text,occurrence:1}}];
    const context=await browser.newContext(); await context.route('**/*',route=>route.request().resourceType()==='document'?route.fulfill({contentType:'text/html',body:detailHtml(data)}):route.abort());
    const page=await context.newPage(); await page.goto('https://darktide.gameslantern.com/abilities/example');
    for(const f of files) await page.addScriptTag({content:source(f)});

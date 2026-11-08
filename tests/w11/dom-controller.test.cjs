@@ -47,7 +47,7 @@ test('InterT05_實際控制器重掃勘誤與結構變更', async () => {
  const {createDomAdapter}=require('../../extension/shared/dom-adapter.js');
  for(const field of ['name','official']) {
   const data=displayFixture(), text=field==='name'?'範例':'中文';
-  data.skills.items[0].errata=[{locale:'zh',official:text,corrected:'修正',valueRef:'/values/params/bonus',anchor:{field,locale:'zh',text,occurrence:1}}];
+  data.skills.items[0].errata=[{locale:'zh',official:text,corrected:'修正',valueRefs:['/values/params/bonus'], sources: [{ path: 'source.lua', line: 1 }],anchor:{field,locale:'zh',text,occurrence:1}}];
   const s=snapshot(data), document=createDocument(); document.nodeType=9; document.location={href:'https://darktide.gameslantern.com/abilities/example',pathname:'/abilities/example'};
   document.defaultView.addEventListener=()=>{}; document.defaultView.removeEventListener=()=>{};
   const container=document.createElement('div'), name=document.createElement('div'), description=document.createElement('div');

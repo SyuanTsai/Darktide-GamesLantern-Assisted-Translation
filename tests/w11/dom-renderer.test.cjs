@@ -7,7 +7,7 @@ test('UnitT05_勘誤標示與獨立區塊及還原', () => {
  const {displayFixture}=require('../helpers/source-data-display.cjs');
  for (const mode of ['match','missing','range','null']) {
   const data=displayFixture(), item=data.skills.items[0];
-  item.errata=[{locale:'zh',official:'中文',corrected:'修正',valueRef:'/x',anchor:{field:'official',locale:'zh',text:mode==='missing'?'不存在':'中文',occurrence:mode==='range'?2:1}}];
+  item.errata=[{locale:'zh',official:'中文',corrected:'修正',valueRefs:['/x'], sources: [{ path: 'source.lua', line: 1 }],anchor:{field:'official',locale:'zh',text:mode==='missing'?'不存在':'中文',occurrence:mode==='range'?2:1}}];
   if(mode==='null') item.official.zh=null;
   const model=p.buildSkillViewModels(snapshot(data))[0], document=createDocument(), dom=a.createDomAdapter({document});
   const parent=document.createElement('main'), anchor=document.createElement('div'), nameElement=document.createElement('div'), descriptionElement=document.createElement('div');

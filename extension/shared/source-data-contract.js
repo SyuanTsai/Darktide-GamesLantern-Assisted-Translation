@@ -10,6 +10,11 @@
   const COMMIT = /^[0-9a-fA-F]{40}$/;
   const BATCH = /^[A-Za-z0-9._-]{1,128}$/;
   const ID = /^darktide:(skill|weapon|blessing|term):[a-z0-9_.:-]+$/;
+  const ITEM_CATEGORY_BY_ID_TYPE = Object.freeze({ skill: 'skills', weapon: 'weapons', blessing: 'blessings', term: 'terms' });
+  function categoryFromItemId(id) {
+    const type = /^darktide:(skill|weapon|blessing|term):/.exec(id)?.[1];
+    return ITEM_CATEGORY_BY_ID_TYPE[type];
+  }
   // Copied from domains.js safety policy; apply to every string, including source metadata.
   const EXECUTABLE_KEYS = new Set(['js', 'javascript', 'wasm', 'html', 'htmltemplate', 'templatehtml', 'htmlprogram',
     'selector', 'selectors', 'selectorprogram', 'domselectorprogram', 'queryselectorprogram', 'script',
@@ -56,7 +61,7 @@
     return v;
   }
   function identity(v) {
-    string(v.schemaVersion, /^1\.\d+\.\d+$/); string(v.gameVersion, VERSION); string(v.sourceCommit, COMMIT); string(v.textBatch, BATCH);
+    enumeration(v.schemaVersion, ['1.0.0', '1.1.0', '1.2.0']); string(v.gameVersion, VERSION); string(v.sourceCommit, COMMIT); string(v.textBatch, BATCH);
   }
   function validateCurrent(v) {
     safe(v); object(v, [...IDENTITY_KEYS, 'path', 'versions']); identity(v); string(v.path);
@@ -65,10 +70,10 @@
     return v;
   }
   function bilingual(v) { object(v, ['en', 'zh']); nullable(v.en); nullable(v.zh); }
-  function params(v) {
+  function params(v, keyPattern = /^[a-z][a-z0-9_]*$/) {
     check(record(v), 'params');
     for (const [k, p] of Object.entries(v)) {
-      string(k, /^[a-z][a-z0-9_]*$/); object(p, ['value'], ['unit', 'unknown']);
+      string(k, keyPattern); object(p, ['value'], ['unit', 'unknown']);
       const primitive = x => check(x === null || ['string', 'boolean'].includes(typeof x) || (typeof x === 'number' && Number.isFinite(x)), 'param value');
       if (Array.isArray(p.value)) p.value.forEach(primitive); else primitive(p.value);
       if (Object.hasOwn(p, 'unit')) string(p.unit, /^[a-z][a-z0-9-]*$/);
@@ -76,10 +81,16 @@
       else check(!Object.hasOwn(p, 'unknown'), 'unknown forbidden');
     }
   }
-  function source(v) {
-    object(v, ['commit', 'files', 'scriptVersion'], ['glossary', 'text']); string(v.commit, COMMIT);
+  const pointer = /^(\/([^~\/]|~[01])*)+$/;
+  const mechanicsPattern = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+){0,7}$/;
+  const codeRefPattern = /^[A-Za-z0-9_./-]+#[A-Za-z0-9_.:\[\]-]+$/;
+  function location(x) { object(x, ['path', 'line']); string(x.path, null, 1); integer(x.line, 1); }
+  function source(v, schemaVersion, category) {
+    object(v, ['commit', 'files', 'scriptVersion'], ['glossary', 'text', ...(schemaVersion === '1.2.0' && ['skills', 'blessings'].includes(category) ? ['valueSources', 'codeRefs'] : [])]); string(v.commit, COMMIT);
     string(v.scriptVersion, /^(pipeline\/[a-z0-9-]+\.mjs@[0-9]+\.[0-9]+\.[0-9]+|legacy:[A-Za-z0-9._/-]+@[0-9a-f]{7,40})$/);
     array(v.files, f => { object(f, ['path'], ['line']); string(f.path, null, 1); if (Object.hasOwn(f, 'line')) integer(f.line, 1); }, { min: 1 });
+    if (Object.hasOwn(v, 'valueSources')) { check(record(v.valueSources), 'valueSources'); for (const [key, entries] of Object.entries(v.valueSources)) { string(key, pointer); array(entries, location, { min: 1 }); } }
+    if (Object.hasOwn(v, 'codeRefs')) { check(record(v.codeRefs), 'codeRefs'); for (const [key, entry] of Object.entries(v.codeRefs)) { string(key, codeRefPattern); object(entry, ['path', 'symbol', 'sha256']); const [path, symbol] = key.split('#'); check(entry.path === path && entry.symbol === symbol, 'codeRef identity'); string(entry.sha256, /^[a-f0-9]{64}$/); } }
     if (Object.hasOwn(v, 'glossary')) { const g = v.glossary; object(g, ['repo', 'commit', 'path', 'line']); string(g.repo, null, 1); string(g.commit, COMMIT); string(g.path, null, 1); integer(g.line, 1); }
     if (Object.hasOwn(v, 'text')) {
       object(v.text, ['batch', 'keys']); string(v.text.batch, BATCH); object(v.text.keys, [], ['name', 'description']); Object.values(v.text.keys).forEach(x => string(x));
@@ -89,7 +100,7 @@
   function values(v, category, schemaVersion) {
     const modern = schemaVersion !== '1.0.0' && Number(schemaVersion.split('.')[1]) >= 1;
     if (category === 'skills') {
-      object(v, ['archetype', 'tree', 'nodeType', 'icon', 'parents', 'maxPoints', 'params']);
+      object(v, ['archetype', 'tree', 'nodeType', 'icon', 'parents', 'maxPoints', 'params'], schemaVersion === '1.2.0' ? ['mechanics'] : []);
       string(v.archetype, null, 1); string(v.tree, null, 1); nullable(v.icon); integer(v.maxPoints, 1);
       enumeration(v.nodeType, ['ability', 'ability_modifier', 'aura', 'keystone', 'keystone_modifier', 'tactical', 'tactical_modifier', 'stat', 'start', 'default', 'broker_stimm']);
       array(v.parents, x => string(x, ref('skill')), { unique: true });
@@ -155,24 +166,25 @@
         });
       }
     } else if (category === 'blessings') {
-      object(v, ['weapons', 'tiers', 'params']); array(v.weapons, x => string(x, ref('weapon')), { unique: true, min: 1 });
-      array(v.tiers, t => { object(t, ['tier', 'params']); integer(t.tier, 1, 4); params(t.params); }, { min: 1 });
+      object(v, ['weapons', 'tiers', 'params'], schemaVersion === '1.2.0' ? ['mechanics'] : []); array(v.weapons, x => string(x, ref('weapon')), { unique: true, min: 1 });
+      array(v.tiers, t => { object(t, ['tier', 'params'], schemaVersion === '1.2.0' ? ['mechanics'] : []); integer(t.tier, 1, 4); params(t.params); if (Object.hasOwn(t, 'mechanics')) params(t.mechanics, mechanicsPattern); }, { min: 1 });
     } else {
       object(v, ['category', 'context', 'refs', 'params']); nullable(v.context);
       enumeration(v.category, ['keyword', 'class', 'skill-type', 'weapon-type', 'weapon-stat', 'weapon-perk', 'quality', 'curio', 'curio-perk', 'curio-trait', 'mortis-buff']);
       array(v.refs, x => string(x, ID), { unique: true });
     }
     params(v.params);
+    if (Object.hasOwn(v, 'mechanics')) params(v.mechanics, mechanicsPattern);
   }
   function item(v, category, schemaVersion) {
-    object(v, ['id', 'key', 'name', 'official', 'values', 'explanation', 'errata', 'source'], ['aliases', 'retainedFrom']);
+    object(v, ['id', 'key', 'name', 'official', 'values', 'explanation', 'errata', 'source'], ['aliases', 'retainedFrom', ...(schemaVersion === '1.2.0' && ['skills', 'blessings'].includes(category) ? ['citations'] : [])]);
     if (Object.hasOwn(v, 'retainedFrom')) {
       const r = v.retainedFrom; object(r, ['gameVersion', 'sourceCommit', 'textBatch']);
       string(r.gameVersion, VERSION); string(r.sourceCommit, COMMIT); string(r.textBatch, BATCH);
     }
     string(v.id, ref({ skills: 'skill', weapons: 'weapon', blessings: 'blessing', terms: 'term' }[category])); string(v.key, null, 1);
     object(v.name, ['en', 'zh', 'origin']); nullable(v.name.en); nullable(v.name.zh); enumeration(v.name.origin, ['official', 'glossary', 'internal']);
-    bilingual(v.official); source(v.source);
+    bilingual(v.official); source(v.source, schemaVersion, category);
     if (v.name.origin === 'glossary') check(Object.hasOwn(v.source, 'glossary'), 'glossary source');
     if (v.name.origin === 'official') string(v.name.en);
     if (v.name.origin === 'internal') { string(v.name.en, null, 1); check(v.name.zh === null, 'internal zh'); }
@@ -181,8 +193,21 @@
     object(v.explanation, sections, modern && ['blessings', 'skills'].includes(category) ? ['effectOrigin'] : []);
     sections.forEach(k => string(v.explanation[k], null, k === 'effect' ? 1 : 0));
     if (Object.hasOwn(v.explanation, 'effectOrigin')) enumeration(v.explanation.effectOrigin, ['official', 'unofficial-translation']);
-    array(v.errata, e => { object(e, ['locale', 'official', 'corrected', 'valueRef'], ['anchor']); enumeration(e.locale, ['en', 'zh']); string(e.official); string(e.corrected); string(e.valueRef, /^(\/([^~\/]|~[01])*)+$/);
-      if (Object.hasOwn(e, 'anchor')) { const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence']); enumeration(a.field, ['official', 'name']); enumeration(a.locale, ['en', 'zh']); check(a.locale === e.locale, 'anchor locale'); string(a.text, null, 1); integer(a.occurrence, 1); }
+    if (Object.hasOwn(v, 'citations')) array(v.citations, c => {
+      object(c, ['section', 'text', 'codeRefs', 'valueRefs']); enumeration(c.section, sections); string(c.text, null, 1);
+      array(c.codeRefs, x => string(x, codeRefPattern), { unique: true }); array(c.valueRefs, x => string(x, pointer), { unique: true });
+      check(c.codeRefs.length + c.valueRefs.length > 0, 'citation refs');
+    });
+    array(v.errata, e => {
+      object(e, ['locale', 'official', 'corrected', 'valueRefs', 'sources'], ['anchor']); enumeration(e.locale, ['en', 'zh']); string(e.official); string(e.corrected);
+      array(e.valueRefs, x => string(x, pointer), { min: 1 }); array(e.sources, location, { min: 1 });
+      if (Object.hasOwn(e, 'anchor')) {
+        const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence'], ['itemId', 'param', 'tier']);
+        enumeration(a.field, ['official', 'name', 'displayParameter']); enumeration(a.locale, ['en', 'zh']); check(a.locale === e.locale, 'anchor locale'); string(a.text, null, 1); integer(a.occurrence, 1);
+        if (Object.hasOwn(a, 'itemId')) string(a.itemId, ID);
+        if (a.field === 'displayParameter') { string(a.param, /^[a-z][a-z0-9_]*$/); const targetCategory = Object.hasOwn(a, 'itemId') ? categoryFromItemId(a.itemId) : category; if (targetCategory === 'blessings') check(Object.hasOwn(a, 'tier'), 'tier required'); if (Object.hasOwn(a, 'tier')) integer(a.tier, 1, 4); }
+        else check(!Object.hasOwn(a, 'param') && !Object.hasOwn(a, 'tier'), 'anchor fields forbidden');
+      }
     });
     if (Object.hasOwn(v, 'aliases')) {
       object(v.aliases, ['gameslantern']); object(v.aliases.gameslantern, ['ids'], ['path']);
