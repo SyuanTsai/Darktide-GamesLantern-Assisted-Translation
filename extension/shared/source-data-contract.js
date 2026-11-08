@@ -10,6 +10,11 @@
   const COMMIT = /^[0-9a-fA-F]{40}$/;
   const BATCH = /^[A-Za-z0-9._-]{1,128}$/;
   const ID = /^darktide:(skill|weapon|blessing|term):[a-z0-9_.:-]+$/;
+  const ITEM_CATEGORY_BY_ID_TYPE = Object.freeze({ skill: 'skills', weapon: 'weapons', blessing: 'blessings', term: 'terms' });
+  function categoryFromItemId(id) {
+    const type = /^darktide:(skill|weapon|blessing|term):/.exec(id)?.[1];
+    return ITEM_CATEGORY_BY_ID_TYPE[type];
+  }
   // Copied from domains.js safety policy; apply to every string, including source metadata.
   const EXECUTABLE_KEYS = new Set(['js', 'javascript', 'wasm', 'html', 'htmltemplate', 'templatehtml', 'htmlprogram',
     'selector', 'selectors', 'selectorprogram', 'domselectorprogram', 'queryselectorprogram', 'script',
@@ -200,7 +205,7 @@
         const a = e.anchor; object(a, ['field', 'locale', 'text', 'occurrence'], ['itemId', 'param', 'tier']);
         enumeration(a.field, ['official', 'name', 'displayParameter']); enumeration(a.locale, ['en', 'zh']); check(a.locale === e.locale, 'anchor locale'); string(a.text, null, 1); integer(a.occurrence, 1);
         if (Object.hasOwn(a, 'itemId')) string(a.itemId, ID);
-        if (a.field === 'displayParameter') { string(a.param, /^[a-z][a-z0-9_]*$/); if (category === 'blessings') check(Object.hasOwn(a, 'tier'), 'tier required'); if (Object.hasOwn(a, 'tier')) integer(a.tier, 1, 4); }
+        if (a.field === 'displayParameter') { string(a.param, /^[a-z][a-z0-9_]*$/); const targetCategory = Object.hasOwn(a, 'itemId') ? categoryFromItemId(a.itemId) : category; if (targetCategory === 'blessings') check(Object.hasOwn(a, 'tier'), 'tier required'); if (Object.hasOwn(a, 'tier')) integer(a.tier, 1, 4); }
         else check(!Object.hasOwn(a, 'param') && !Object.hasOwn(a, 'tier'), 'anchor fields forbidden');
       }
     });
