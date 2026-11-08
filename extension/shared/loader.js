@@ -166,7 +166,7 @@
       || !['single', 'raw-byte-shards'].includes(m.representation) || !integer(m.totalBytes)
       || m.totalBytes > LIMITS.fileBytes || !hash(m.totalSha256) || !Array.isArray(m.parts)
       || m.parts.length < 1 || m.parts.length > MAX_PARTS
-      || (m.representation === 'single' && (m.parts.length !== 1 || m.totalBytes > 25 * 1024 * 1024))
+      || (m.representation === 'single' && (m.parts.length !== 1 || m.totalBytes > PART_BYTES))
       || (m.representation === 'raw-byte-shards' && m.totalBytes <= PART_BYTES)) fail(category + ' manifest is invalid');
     let offset = 0;
     for (let i = 0; i < m.parts.length; i++) {
